@@ -197,20 +197,15 @@ df <- as.data.frame(Tor.sfdf) %>%
   group_by(Hour) %>%
   dplyr::summarize(nT = n(),
                    nC = sum(inj + fat),
-                   avgED = mean(ED),
+                   arithmeticED = mean(ED),
+                   geometricMean = exp(mean(log(ED))),
                    q25ED = quantile(ED, prob = .25),
                    q75ED = quantile(ED, prob = .75),
                    q90ED = quantile(ED, prob = .9),
                    q95ED = quantile(ED, prob = .95),
                    q99ED = quantile(ED, prob = .99),
-                   q50ED = quantile(ED, prob = .5))
-
-ggplot(df, aes(x = Hour, y = nT)) +
-  geom_bar(stat = "identity") +
-  scale_x_continuous(breaks = 0:23) +
-  xlab("Local Hour of Occurrence  [+/- one hr]") + ylab("Number of Tornadoes") +
-  theme_minimal() +
-  ggtitle("Number of Tornadoes By Hour of Day")
+                   q50ED = quantile(ED, prob = .5),
+                   maxED = max(ED))
 
 p3 <- ggplot(df, aes(x = Hour, y = q50ED/10^9)) +
   geom_errorbar(aes(ymin = q25ED/10^9, ymax = q75ED/10^9), color = "grey", width = .2) +
@@ -225,28 +220,56 @@ p3 <- ggplot(df, aes(x = Hour, y = q50ED/10^9)) +
 
 Polar coordinate plots.
 ```{r}
-labs <- c("Midnight", "2 am", "4 am", "6 am", "8 am", "10 am", "Noon", "2 pm", "4 pm", "6 pm", "8 pm", "10 pm")
+labsHours <- c("Midnight", "2 am", "4 am", "6 am", "8 am", "10 am", "Noon", "2 pm", "4 pm", "6 pm", "8 pm", "10 pm")
 c1 <- ggplot(df, aes(Hour, nT)) +
   geom_bar(stat = "identity") +
   scale_x_continuous(breaks = seq(0, 23, 2), 
-                     labels = labs) +
+                     labels = labsHours) +
   coord_polar(start = -0.12) +
-  labs(x = "", y = "Number of Tornadoes") +
+  labs(x = "Time of Day", y = "Number of Tornadoes") +
   theme_minimal()
+<<<<<<< HEAD
 c2 <- ggplot(df, aes(Hour, q50ED/10^9)) +
+=======
+c2 <- ggplot(df, aes(Hour, geometricMean/10^9)) +
+>>>>>>> 94983b79f5a48a6ec8d91941b2f6313660339d55
   geom_bar(stat = "identity") +
   scale_x_continuous(breaks = seq(0, 23, 2), 
-                     labels = labs) +
+                     labels = labsHours) +
   coord_polar(start = -0.12) +
-  labs(x = "Time of Day", y = "Median Tornado Power (GW)") +
+  labs(x = "Time of Day", y = "Mean (geometric) Tornado Power (GW)") +
   theme_minimal()
 ```
 
-Putting two plots together
+Putting plots together.  Thanks to https://github.com/thomasp85/patchwork/ If `library(patchwork)` from Thomas Pender returns an error. Install `ggplot2` from GitHub (Hadley Wickham). Restart your session.
 ```{r}
 #devtools::install_github("thomasp85/patchwork")
+#devtools::install_github("hadley/ggplot2")
+library(ggplot2)
 library(patchwork)
-c1/c2
+c1 + c2
+```
+
+Repeat polar coordinate plot with monthly means.
+```{r}
+df %>%
+  group_by(mo) %>%
+  summarize(arthmeticMean = mean(ED)/10^9,
+            geometricMean = exp(mean(log(ED)))/10^9,
+            geometricSD = exp(sqrt(sum((log(ED/10^9/geometricMean))^2/(length(ED/10^9) - 1)))),
+            q25ED = quantile(ED, prob = .25)/10^9,
+            q75ED = quantile(ED, prob = .75)/10^9,
+            q50ED = quantile(ED, prob = .5)/10^9) %>%
+ggplot(., aes(x = mo, y = q50ED)) +
+  geom_bar(stat = "identity", width = 1) +
+#  geom_errorbar(aes(ymin = q25ED, 
+#                    ymax = q75ED),
+#                    width = .2) +
+  scale_x_continuous(breaks = seq(1, 12, 1), labels = month.abb) +
+  scale_y_continuous(limits = c(0, NA)) +
+  coord_polar(start = 0) +
+  labs(x = "Month", y = "Average (geometric) Tornado Power (GW)") +
+  theme_minimal()
 ```
 
 
@@ -263,7 +286,7 @@ ggplot(., aes(x = mo, y = perTorCas)) +
   geom_smooth()
 ```
 
-Putting multiple plots together in a patchwork. Thanks to https://github.com/thomasp85/patchwork/
+Putting multiple plots together in a patchwork.
 ```{r}
 (p1 + p3) / p2
 ```
