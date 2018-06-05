@@ -237,7 +237,7 @@ c2 <- ggplot(df, aes(Hour, geometricMean/10^9)) +
   theme_minimal()
 ```
 
-Put multiple plots on the same page using **patchwork**.  Thanks to https://github.com/thomasp85/patchwork/ If `library(patchwork)` from Thomas Pender returns an error. Install `ggplot2` from GitHub (Hadley Wickham). Restart your session.
+Put multiple plots on the same page using **patchwork**.  Thanks to https://github.com/thomasp85/patchwork/ If `library(patchwork)` from Thomas Lin Pedersen returns an error. Install `ggplot2` from GitHub (Hadley Wickham). Restart your session.
 ```{r}
 #devtools::install_github("thomasp85/patchwork")
 #devtools::install_github("hadley/ggplot2")
