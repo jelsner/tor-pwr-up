@@ -233,7 +233,7 @@ c1 <- ggplot(df, aes(Hour, nT)) +
   coord_polar(start = -0.12) +
   labs(x = "", y = "Number of Tornadoes") +
   theme_minimal()
-c2 <- ggplot(df, aes(Hour, q99ED/10^9)) +
+c2 <- ggplot(df, aes(Hour, q50ED/10^9)) +
   geom_bar(stat = "identity") +
   scale_x_continuous(breaks = seq(0, 23, 2), 
                      labels = labs) +
