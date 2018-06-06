@@ -13,6 +13,14 @@ This Rmd was written in support of _Increasingly powerful tornadoes in the Unite
 
 Using R.5.0 Joy in Playing. Unzip the `IncreasingPower` folder and open `IncreasingPowerFinal.Rmd` in RStudio.
 
+Set multiple cores for Stan model. http://r.789695.n4.nabble.com/MC-CORES-and-mc-cores-for-parallel-package-td4727155.html
+```{r}
+Sys.setenv("MC_CORES"= 4)
+options("mc.cores")
+library(parallel)
+options("mc.cores")
+```
+
 Get packages and load the May 2 data image. The `model` object from the image is saved from a 5-hr run of the hierarchical model written in Stan code using the **brms** package.
 ```{r}
 library(tidyverse)
@@ -237,7 +245,7 @@ c2 <- ggplot(df, aes(Hour, geometricMean/10^9)) +
   theme_minimal()
 ```
 
-Put multiple plots on the same page using **patchwork**.  Thanks to https://github.com/thomasp85/patchwork/ If `library(patchwork)` from Thomas Lin Pedersen returns an error. Install `ggplot2` from GitHub (Hadley Wickham). Restart your session.
+Put multiple plots on the same page using **patchwork**.  Thanks to https://github.com/thomasp85/patchwork/ If `library(patchwork)` from Thomas Lin Pedersen returns an error. Install `ggplot2` from GitHub (Hadley Wickham). Restart your R session.
 ```{r}
 #devtools::install_github("thomasp85/patchwork")
 #devtools::install_github("hadley/ggplot2")
@@ -488,8 +496,8 @@ df %>%
 Start with a log-linear mixed model using the `lmer()` function from the **lme4** package. The response variable is the natural logarithm of energy dissipation.
 ```{r}
 library(lme4)
-model0 <- lmer(log(ED) ~ I(yr - 2002) + ENSO + After2007 + (1|mo) + (1|Hour), data = df)
-model0a <- lmer(log(ED) ~ I(yr - 2002) + ENSO + SST + After2007 + (1|mo) + (1|Hour), data = df)
+model0 <- lmer(log(ED) ~  ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour), data = df)
+model0a <- lmer(log(ED) ~ ENSO + SST + After2007 + I(yr - 2002) + (1|mo) + (1|Hour), data = df)
 
 summary(model0a)
 ranef(model0a)
@@ -502,11 +510,12 @@ library(brms)
 
 The most important reason to use `control` is to decrease (or preferably) eliminate the number of divergent transitions that cause a bias in the posterior samples. With a warning `There were divergent transitions after warmup` you should increase the `adapt_delta`. For example `control = list(adapt_delta = .95)`. The default is a  value of .8. Increasing the value slows down the sampler.
 ```{r}
-formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + s(mo) + s(Hour)
+#formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + s(mo) + s(Hour)  # Model in the May2.RData file
+formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour) # Model as in the lmer specification
 family <- brms::lognormal()
 ```
 
-The model formula is a truncated log-normal distribution to reflect a threshold energy below which tornadoes do not exist. We set this threshold at 4.440 GW just below the 4.445 GW weakest tornado in the record.
+The model formula is a truncated log-normal distribution to reflect a threshold energy below which tornadoes have never occurred. We set this threshold at 4.440 GW just below the 4.445 GW weakest tornado in the record.
 
 Laptop errors with `cores` > 1?
 ```{r, eval=FALSE}
@@ -516,8 +525,10 @@ model <- brm(family = family,
              formula = formula,
              data = df2,
              prior = set_prior('normal(0, 1)'),
-             warmup = 1000, iter = 5000, chains = 4, cores = 4,
-             control = list(adapt_delta = .95))
+#             warmup = 1000, iter = 5000, chains = 4, cores = 4,
+             warmup = 200, iter = 2200, chains = 4, cores = 4,
+             inits = "0",
+             control = list(adapt_delta = .8))
 ```
 
 Approximately 5 hours per chain. 11 divergent transitions with `adapt_delta` set at .95. None with it set to .99.
@@ -556,7 +567,11 @@ https://www.r-bloggers.com/r-functions-for-bayesian-model-statistics-and-summari
 
 ```{r}
 library(sjstats)
-hdi(model)
+hdi(model, type = "fixed")
+```
+
+```{r}
+tidy_stan(model)
 ```
 
 
@@ -569,7 +584,7 @@ The distribution of the posterior mean energy dissipation (on a log scale) again
 
 The `posterior_predict()` function generates samples of ED. Compare the distribution of ED statistics (mean, max) with actual ED.
 ```{r}
-yrep <- posterior_predict(model, nsamples = 5000)
+yrep <- posterior_predict(model, nsamples = 1600)
 df.yrep <- as.data.frame(yrep)
 df.out <- reshape2::melt(df.yrep) %>%
   group_by(variable) %>%
