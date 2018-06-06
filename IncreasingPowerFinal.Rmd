@@ -551,6 +551,15 @@ ggplot(coefTable, aes(x = id, y = mi)) +
   coord_flip() 
 ```
 
+The **sjstats** package for model summaries on models fit using the **brms** package.
+https://www.r-bloggers.com/r-functions-for-bayesian-model-statistics-and-summaries-rstats-stan-brms/
+
+```{r}
+library(sjstats)
+hdi(model)
+```
+
+
 ```{r, eval=FALSE}
 pp_check(model, type = "stat")
 #pp_check(model, type = "ecdf_overlay")
