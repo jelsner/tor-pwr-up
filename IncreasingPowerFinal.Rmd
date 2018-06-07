@@ -28,7 +28,7 @@ library(lubridate)
 library(rgeos)
 library(sf)
 library(xtable)
-load(file = "May2.RData")
+load(file = "Jun7.RData")
 ```
 
 Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
@@ -531,7 +531,13 @@ model <- brm(family = family,
              control = list(adapt_delta = .8))
 ```
 
-Approximately 5 hours per chain. 11 divergent transitions with `adapt_delta` set at .95. None with it set to .99.
+
+```{r}
+save.image(file = "Jun7.RData")
+```
+
+There were 390 transitions after warmup that exceeded the maximum treedepth. Increase max_treedepth above 10. See
+http://mc-stan.org/misc/warnings.html#maximum-treedepth-exceededExamine the pairs() plot to diagnose sampling problems
 
 ```{r}
 summary(model)
@@ -584,7 +590,7 @@ The distribution of the posterior mean energy dissipation (on a log scale) again
 
 The `posterior_predict()` function generates samples of ED. Compare the distribution of ED statistics (mean, max) with actual ED.
 ```{r}
-yrep <- posterior_predict(model, nsamples = 1600)
+yrep <- posterior_predict(model, nsamples = 8000)
 df.yrep <- as.data.frame(yrep)
 df.out <- reshape2::melt(df.yrep) %>%
   group_by(variable) %>%
