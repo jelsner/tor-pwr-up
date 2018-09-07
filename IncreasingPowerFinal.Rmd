@@ -15,7 +15,7 @@ Using R 3.5.1 Feather Spray. Unzip the `IncreasingPower` folder and open `Increa
 
 Set multiple cores for Stan model. http://r.789695.n4.nabble.com/MC-CORES-and-mc-cores-for-parallel-package-td4727155.html
 ```{r}
-Sys.setenv("MC_CORES"= 4)
+Sys.setenv("MC_CORES" = 4)
 options("mc.cores")
 library(parallel)
 options("mc.cores")
@@ -28,10 +28,10 @@ library(lubridate)
 library(rgeos)
 library(sf)
 library(xtable)
-load(file = "Jun7.RData")
+#load(file = "Jun7.RData")
 ```
 
-Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
+OLD: Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
 ```{r, eval=FALSE}
 if(!file.exists("torn")){ 
     download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/tornado.zip",
@@ -53,11 +53,18 @@ Tor.sfdf <- st_as_sf(Tor.spdf)
 st_crs(Tor.sfdf) <- 4326
 ```
 
+Remove tornadoes occurring before 1994. The year marks the beginning of comprehensive WSR-88D radar. For missing EF ratings use the modification rules (if/else) defined here: https://www.spc.noaa.gov/wcm/OneTor_F-scale-modifications.pdf
+```{r}
+Tor.sfdf <- Tor.sfdf %>%
+  filter(yr >= 1994) %>%
+  mutate(mag = ifelse(mag == -9 & len <= 5, 0, mag),
+         mag = ifelse(mag == -9 & len > 5, 1, mag))
+```
+
 Prepare the tornado data.
 ```{r}
-
 Tor.sfdf <- Tor.sfdf %>%
-  filter(yr >= 1994, mag != -9) %>%
+#  filter(yr >= 1994, mag != -9) %>%
   mutate(DateTime = as.POSIXct(paste(yr, mo, dy, time), format = "%Y%m%d%H:%M:%S"),
          Hour = hour(DateTime),
          Year = year(DateTime),
@@ -133,8 +140,8 @@ dfx <- as.data.frame(Tor.sfdf) %>%
   summarize(nT = n(),
             nST = sum(mag >= 3),
             nVT = sum(mag >= 4)) %>%
-  mutate(outbreakSize = cut(nT, levels, labels = labels)) %>%
-  group_by(outbreakSize) %>%
+  mutate(torDaySize = cut(nT, levels, labels = labels)) %>%
+  group_by(torDaySize) %>%
   summarize(totalCases = n(),
     totalTornadoes = sum(nT),
     pST = sum(nST)/totalTornadoes * 100,
