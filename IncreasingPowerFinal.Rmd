@@ -28,7 +28,7 @@ library(lubridate)
 library(rgeos)
 library(sf)
 library(xtable)
-#load(file = "Jun7.RData")
+#load(file = "Sep7.RData")
 ```
 
 OLD: Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
@@ -259,7 +259,7 @@ c2 <- ggplot(df, aes(Hour, geometricMean/10^9)) +
   scale_x_continuous(breaks = seq(0, 23, 2), 
                      labels = labsHours) +
   coord_polar(start = -0.12) +
-  labs(x = "Time of Day", y = "Mean (geometric) Tornado Power (GW)") +
+  labs(x = "Time of Day", y = "Average (geometric) Tornado Power (GW)") +
   theme_minimal()
 ```
 
@@ -274,15 +274,15 @@ c1 + c2
 
 Repeat polar coordinate plot with monthly means.
 ```{r}
-df %>%
+df <- as.data.frame(Tor.sfdf) %>%
   group_by(mo) %>%
   summarize(arthmeticMean = mean(ED)/10^9,
             geometricMean = exp(mean(log(ED)))/10^9,
             geometricSD = exp(sqrt(sum((log(ED/10^9/geometricMean))^2/(length(ED/10^9) - 1)))),
             q25ED = quantile(ED, prob = .25)/10^9,
             q75ED = quantile(ED, prob = .75)/10^9,
-            q50ED = quantile(ED, prob = .5)/10^9) %>%
-ggplot(., aes(x = mo, y = q50ED)) +
+            q50ED = quantile(ED, prob = .5)/10^9)
+ggplot(df, aes(x = mo, y = q50ED)) +
   geom_bar(stat = "identity", width = 1) +
 #  geom_errorbar(aes(ymin = q25ED, 
 #                    ymax = q75ED),
@@ -347,7 +347,7 @@ Putting multiple plots together in a patchwork.
 
 Get the ENSO variable http://www.esrl.noaa.gov/psd/data/correlation/censo.data. Here we use the bivariate ENSO. Join to per tornado data frame with the `left_join()` function. We also get the western Caribbean SST (WCA) as used in the seasonal prediction model. 
 
-SST bbox: 10, 35, -97, -70  https://www.esrl.noaa.gov/psd/cgi-bin/data/timeseries/timeseries1.pl
+SST bbox: 35, 10, -97, -70, monolevel variable,  https://www.esrl.noaa.gov/psd/cgi-bin/data/timeseries/timeseries1.pl
 ```{r}
 ENSO <- read.table("ENSO.txt", header = TRUE) %>%
   filter(Year >= 1994)
@@ -529,47 +529,52 @@ library(brms)
 The most important reason to use `control` is to decrease (or preferably) eliminate the number of divergent transitions that cause a bias in the posterior samples. With a warning `There were divergent transitions after warmup` you should increase the `adapt_delta`. For example `control = list(adapt_delta = .95)`. The default is a  value of .8. Increasing the value slows down the sampler.
 ```{r}
 #formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + s(mo) + s(Hour)  # Model in the May2.RData file
-formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour) # Model as in the lmer specification
+formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour) # Model as in the lmer specification (Jun7.RData)
 family <- brms::lognormal()
+
+get_prior(formula, data = df, family = family)
+```
+
+Sample from the priors.
+```{r}
+priors <- brm(formula = formula,
+              data = df, family = family,
+              prior = c(set_prior("normal(0,5)", class = "b"),
+                    set_prior("student_t(3, 22, 10)", class = "Intercept"),
+                    set_prior("student_t(3, 0, 10)", class = "sd"),
+                    set_prior("student_t(3, 0, 10)", class = "sigma")),
+          sample_prior = "only", seed = 9112,
+          control = list(adapt_delta = .8))
+
+out <- predict(priors, probs = c(0, 1))
 ```
 
 The model formula is a truncated log-normal distribution to reflect a threshold energy below which tornadoes have never occurred. We set this threshold at 4.440 GW just below the 4.445 GW weakest tornado in the record.
 
-Laptop errors with `cores` > 1?
-```{r, eval=FALSE}
-df2 <- df %>%
-  filter(mag >= 0)
-model <- brm(family = family,
-             formula = formula,
-             data = df2,
-             prior = set_prior('normal(0, 1)'),
-#             warmup = 1000, iter = 5000, chains = 4, cores = 4,
-             warmup = 200, iter = 2200, chains = 4, cores = 4,
-             inits = "0",
-             control = list(adapt_delta = .8))
-```
-
-
+Fit the model
 ```{r}
-save.image(file = "Jun7.RData")
-```
+post <- brm(formula = formula,
+             data = df, family = family,
+             prior = c(set_prior("normal(0,5)", class = "b"),
+                       set_prior("student_t(3, 22, 10)", class = "Intercept"),
+                       set_prior("student_t(3, 0, 10)", class = "sd"),
+                       set_prior("student_t(3, 0, 10)", class = "sigma")),
+              inits = "0", seed = 9112,
+              control = list(adapt_delta = .8))
 
-There were 390 transitions after warmup that exceeded the maximum treedepth. Increase max_treedepth above 10. See
-http://mc-stan.org/misc/warnings.html#maximum-treedepth-exceededExamine the pairs() plot to diagnose sampling problems
-
-```{r}
-summary(model)
+summary(post)
+save.image("Sep7")
 ```
 
 The wiggly parts of the spline basis are treated as a random effects and their associated variance parameter `sigma` controls the degree of wiggliness of the fitted spline. The perfectly smooth parts of the basis are treated as a fixed effect (`smo_1`).
 
 ```{r}
-coefTable <- as.data.frame(summary(model)$fixed) %>%
+coefTable <- as.data.frame(summary(post)$fixed) %>%
   mutate(lb = exp(`l-95% CI`),
          ub = exp(`u-95% CI`),
          mi = exp(`Estimate`),
-         id = 1:6) %>%
-  filter(id > 1, id < 5)
+         id = 1:4) %>%
+  filter(id > 1)
 
 ggplot(coefTable, aes(x = id, y = mi)) +
   geom_hline(yintercept = 1, color = "grey", linetype = "solid") +
