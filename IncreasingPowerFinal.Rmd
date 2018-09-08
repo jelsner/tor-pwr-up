@@ -28,7 +28,7 @@ library(lubridate)
 library(rgeos)
 library(sf)
 library(xtable)
-#load(file = "Sep7.RData")
+load(file = "Sep7.RData")
 ```
 
 OLD: Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
@@ -323,7 +323,7 @@ ggplot(df, aes(x = Hour, y = perTorCas)) +
   theme_minimal()
 ```
 
-Try to smooth these counts.
+Draw a smoothed curve through the counts.
 ```{r}
 y <- df$perTorCas
 y <- c(y, y, y)
