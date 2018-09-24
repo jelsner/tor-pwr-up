@@ -21,7 +21,7 @@ library(parallel)
 options("mc.cores")
 ```
 
-Get packages and load the Jun 7 data image. The `model` object from the image is saved from a 5-hr run of the hierarchical model written in Stan code using the **brms** package.
+Get packages and load the September 7 data image. The `model` object from the image is saved from a 5-hr run of the hierarchical model written in Stan code using the **brms** package.
 ```{r}
 library(tidyverse)
 library(lubridate)
