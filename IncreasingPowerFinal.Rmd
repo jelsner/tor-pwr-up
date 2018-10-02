@@ -29,6 +29,7 @@ library(rgeos)
 library(sf)
 library(xtable)
 load(file = "Sep7.RData")
+#load(file = "Jun7.RData")
 ```
 
 OLD: Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
@@ -509,7 +510,7 @@ df %>%
 
 ### Models
 
-Start with a log-linear mixed model using the `lmer()` function from the **lme4** package. The response variable is the natural logarithm of energy dissipation.
+Start with a log-linear mixed model using the `lmer()` function from the **lme4** package. The response variable is the natural logarithm of energy dissipation. Random intercept on the month and hour term.
 ```{r}
 library(lme4)
 model0 <- lmer(log(ED) ~  ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour), data = df)
@@ -649,7 +650,7 @@ plot(marginal_effects(post))
 
 Here use the conditionals that are pre-specified.
 ```{r}
-EFmarginal <- marginal_effects(model, method = "fitted")$After2007
+EFmarginal <- marginal_effects(post, method = "fitted")$After2007
 
 p10 <- ggplot(EFmarginal, aes(x = After2007, y = estimate__/10^9)) +
   geom_errorbar(aes(ymin = lower__/10^9 , ymax = upper__/10^9), col = "red", width = 0, size = 2) +
@@ -661,7 +662,7 @@ p10 <- ggplot(EFmarginal, aes(x = After2007, y = estimate__/10^9)) +
   ggtitle("A") +
   theme_minimal()
 
-ENSOmarginal <- marginal_effects(model)$ENSO
+ENSOmarginal <- marginal_effects(post)$ENSO
 
 p11 <- ggplot(ENSOmarginal, aes(x = ENSO, y = estimate__/10^9)) +
   geom_ribbon(aes(ymin = lower__/10^9 , ymax = upper__/10^9), alpha = 1, col = "red", fill = "red") +
@@ -672,40 +673,13 @@ p11 <- ggplot(ENSOmarginal, aes(x = ENSO, y = estimate__/10^9)) +
   ggtitle("B") +
   theme_minimal()
 
-Monthmarginal <- marginal_effects(model)$mo %>%
-  filter(mo %in% 1:12)
-
-p12 <- ggplot(Monthmarginal, aes(x = mo, y = estimate__/10^9)) +
-  geom_errorbar(aes(ymin = lower__/10^9, ymax = upper__/10^9), col = "red", width = 0, size = 2) +
-  scale_y_continuous(limits = c(0, NA)) +
-  scale_x_continuous(breaks = 1:12, labels = month.abb) +
-  geom_point() +
-  xlab("") + ylab("Conditional Power [GW]") +
-#  ggtitle("C") + 
-  theme_minimal()
-
-Hourmarginal <- marginal_effects(model)$Hour
-HourmarginalI <- data.frame(Hour = 0:23,
-                            estimate__ = approx(x = Hourmarginal$Hour, y = Hourmarginal$estimate__, xout = 0:23)$y,
-                            lower__ = approx(x = Hourmarginal$Hour, y = Hourmarginal$lower__, xout = 0:23)$y,
-                            upper__ = approx(x = Hourmarginal$Hour, y = Hourmarginal$upper__, xout = 0:23)$y)
-
-p13 <-ggplot(HourmarginalI, aes(x = Hour, y = estimate__/10^9)) +
-  geom_errorbar(aes(ymin = lower__/10^9, ymax = upper__/10^9), col = "red", width = 0, size = 2) +
-  scale_y_continuous(limits = c(0, NA)) +
-  scale_x_continuous(breaks = seq(0, 23, by = 3), labels = labelsHour) +
-  geom_point() +
-  xlab("") + ylab("Conditional Energy Dissipation [GW]") +
-  ggtitle("D") + 
-  theme_minimal()
-
-(p10 + p11 + p12 + plot_layout(ncol = 3, widths = c(1, 1, 3))) / p13
+p10 + p11 
 ```
 
 Trend. With `method = "fitted"` the graph is computed as the arithmetic average ED over all the outcomes in the event space (e.g., yr = 1994, Hour = 15, mo = 6, etc). With `method = "predict"` the graph is the predicted geometric mean for specific values of the covariaties. We divide the fitted by the scaling factor.
 ```{r}
-TrendmarginalF <- marginal_effects(model, method = "fitted")$yr
-TrendmarginalP <- marginal_effects(model, method = "predict")$yr
+TrendmarginalF <- marginal_effects(post, method = "fitted")$yr
+TrendmarginalP <- marginal_effects(post, method = "predict")$yr
 
 ggplot(TrendmarginalF, aes(x = yr, y = estimate__/10^9/scalingFactor)) +
   geom_ribbon(aes(ymin = lower__/10^9/scalingFactor, ymax = upper__/10^9/scalingFactor), 
@@ -717,28 +691,19 @@ ggplot(TrendmarginalF, aes(x = yr, y = estimate__/10^9/scalingFactor)) +
   theme_minimal()
 ```
 
-Specify the conditions.
+Specify the conditions. Predicted energy dissipation with neutral ENSO after 2007. The ribbon is based on the upper and lower 90% credible interval.
 ```{r}
-conditions <- data.frame(mo = 5, ENSO = 0, After2007 = TRUE, Hour = 16)
-TrendmarginalF <- marginal_effects(model, conditions = conditions, method = "fitted")$yr
+conditions <- data.frame(ENSO = 0, After2007 = TRUE)
+TrendmarginalF <- marginal_effects(post, conditions = conditions, probs = c(.1, .9), robust = FALSE, method = "fitted")$yr
 
-ggplot(TrendmarginalF, aes(x = yr, y = estimate__/10^9)) +
-  geom_ribbon(aes(ymin = lower__/10^9 , ymax = upper__/10^9), alpha = 1, col = "red", fill = "red") +
-  scale_y_continuous() +
+ggplot(TrendmarginalF, aes(x = yr, y = estimate__/10^9/scalingFactor)) +
+  geom_ribbon(aes(ymin = lower__/10^9/scalingFactor, ymax = upper__/10^9/scalingFactor), alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
   scale_x_continuous(breaks = seq(1995, 2015, 5)) +
   geom_line() +
   ylab("Predicted Energy Dissipation [GW]") + xlab("") +
   theme_minimal()
-
-conditions <- data.frame(mo = 1:12, ENSO = 0, After2007 = TRUE, Hour = 16)
-TrendmarginalF <- marginal_effects(model, conditions = conditions, method = "fitted")$yr
-
-p2 + geom_ribbon(aes(x = yr, ymin = lower__/10^9/scalingFactor , ymax = upper__/10^9/scalingFactor), 
-                 data = TrendmarginalF, alpha = .4, fill = "red", inherit.aes = FALSE) +
-     geom_line(aes(x = yr, y = estimate__/10^9/scalingFactor), data = TrendmarginalF, col = "black", 
-               inherit.aes = FALSE)
 ```
-#### Figure 3
 
 ```{r}
 conditions <- data.frame(mo = 1:12, ENSO = 0, After2007 = TRUE, Hour = 10)
