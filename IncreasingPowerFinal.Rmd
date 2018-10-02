@@ -1,13 +1,13 @@
 ---
-output: html_document
+title: "Increasingly Powerful Tornadoes"
+author: "James B. Elsner"
+date: September 25, 2018
+output: 
+  html_document:
+    keep_md: true
 editor_options: 
   chunk_output_type: console
 ---
-Increasingly Powerful Tornadoes
-===============================
-
-James B. Elsner
----------------
 
 This Rmd was written in support of _Increasingly powerful tornadoes in the United States_ by Elsner and Fricker.
 
@@ -369,7 +369,7 @@ df$After2007 <- df$yr >= 2007
 Change point in 2007. Use of the Enhanced Fujita Scale.
 
 The geometric standard deviation describes the spread in the set of energy dissipation values as a (dimensionless) multiplicative factor relative to the geometric mean. The one standard deviation range about the mean is obtained by dividing and multipling the geometric mean by the geometric standard deviation.
-$$\sigma_g = \exp \left( \sqrt{ \sum_{i=1}^n \left( \ln { A_i \over \mu_g } \right)^2 \over n-1 } \right)$$
+$$\sigma_g = \exp \left( \sqrt{ \sum_{i=1}^n \left( \ln { x_i \over \mu_g } \right)^2 \over n-1 } \right)$$
 
 ```{r}
 p4 <- df %>%
@@ -430,7 +430,7 @@ S2 <- ggplot(df, aes(x = Width, y = Year, group = Year, height = ..density..)) +
 S1 + S2
 ```
 #### Figure S1 
-Path widths less than 1 meter are not plotted.
+Path widths narrower than 1 meter are not plotted.
 
 Monthly and hourly
 ```{r}
@@ -491,7 +491,7 @@ ggplot(., aes(x = `ENSO > 0`, y = geometricMean)) +
 ```
 #### Figure 2
 
-Path length by EF rating and month. Hypothesis: violent tornadoes have much shorter paths during May than during November.
+Path length by EF rating and month. Hypothesis: violent tornadoes have shorter paths during May than during November.
 ```{r}
 df %>%
   filter(mag >= 3) %>%
