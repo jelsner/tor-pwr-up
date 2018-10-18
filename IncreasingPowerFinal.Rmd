@@ -517,7 +517,7 @@ df %>%
 Start with a log-linear mixed model using the `lmer()` function from the **lme4** package. The response variable is the natural logarithm of energy dissipation. Random intercept on the month and hour term.
 ```{r}
 library(lme4)
-model0 <- lmer(log(ED) ~  ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour), data = df)
+model0 <- lmer(log(ED) ~  ENSO + After2007 + I(yr - 2002) + longitude * latitude + (1|mo) + (1|Hour), data = df)
 model0a <- lmer(log(ED) ~ ENSO + SST + After2007 + I(yr - 2002) + longitude * latitude + (1|mo) + (1|Hour), data = df)
 
 summary(model0a)
