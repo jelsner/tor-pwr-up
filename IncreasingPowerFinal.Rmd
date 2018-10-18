@@ -13,6 +13,8 @@ This Rmd was written in support of _Increasingly powerful tornadoes in the Unite
 
 Using R 3.5.1 Feather Spray. Unzip the `IncreasingPower` folder and open `IncreasingPowerFinal.Rmd` in RStudio.
 
+New relevant research GensiniBrooks2018, HoogewindEtAl2017
+
 Set multiple cores for Stan model. http://r.789695.n4.nabble.com/MC-CORES-and-mc-cores-for-parallel-package-td4727155.html
 ```{r}
 Sys.setenv("MC_CORES" = 4)
@@ -46,7 +48,9 @@ Tor.sfdf <- sf::st_read(dsn = "torn",
 
 The newest GIS shapefile contains missing geometries for more than 30% of the tornadoes. The number of missing geometries is highest after 1995. Instead use the csv file from https://www.spc.noaa.gov/wcm/#data  Use the start lon/lat and create a `sp` object then convert to `sf`. Set the coordinate reference system (crs) to ESPG 4326.
 ```{r}
-Tor.df <- read.csv(file = "1950-2017_actual_tornadoes.csv")
+Tor.df <- read.csv(file = "1950-2017_actual_tornadoes.csv") %>%
+  mutate(longitude = slon,
+         latitude = slat)
 Tor.spdf <- Tor.df
 rm(Tor.df)
 sp::coordinates(Tor.spdf) <- ~ slon + slat
@@ -514,7 +518,7 @@ Start with a log-linear mixed model using the `lmer()` function from the **lme4*
 ```{r}
 library(lme4)
 model0 <- lmer(log(ED) ~  ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour), data = df)
-model0a <- lmer(log(ED) ~ ENSO + SST + After2007 + I(yr - 2002) + (1|mo) + (1|Hour), data = df)
+model0a <- lmer(log(ED) ~ ENSO + SST + After2007 + I(yr - 2002) + longitude * latitude + (1|mo) + (1|Hour), data = df)
 
 summary(model0a)
 ranef(model0a)
