@@ -242,7 +242,7 @@ p3 <- ggplot(df, aes(x = Hour, y = q50ED/10^9)) +
   geom_point(aes(x = Hour, y = q90ED/10^9), data = df, color = "red") +
   scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), labels = c(.1, 1, 10, 100, 1000), limits = c(.01, 1000)) +
   scale_x_continuous(breaks = 0:23) +
-  xlab("Local Hour of Occurrence [+/- one hr]") + ylab("Energy Dissipation [GW]") +
+  xlab("Local Hour of Occurrence [+/- one hr]") + ylab("Power [GW]") +
   theme_minimal() +
   ggtitle("B")
 ```
