@@ -171,7 +171,7 @@ p1 <- ggplot(df, aes(x = yr, y = q50ED/10^9)) +
   geom_point(aes(x = yr, y = q90ED/10^9), data = df, color = "red") +
   scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), labels = c(.1, 1, 10, 100, 1000), limits = c(.01, 1000)) +
   scale_x_continuous(breaks = seq(1995, 2015, 5)) +
-  xlab("Year") + ylab("Energy Dissipation [GW]") +
+  xlab("Year") + ylab("Power [GW]") +
   theme_minimal() 
 ```
 #### Figure 1
@@ -196,7 +196,7 @@ p2 <- ggplot(df, aes(x = yr, y = q50ED/10^9)) +
   geom_point(aes(x = yr, y = q90ED/10^9), data = df, color = "red", inherit.aes = FALSE) +
   scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), labels = c(.1, 1, 10, 100, 1000)) +
   scale_x_continuous(breaks = seq(1995, 2015, 10)) +
-  xlab("") + ylab("Energy Dissipation [GW]") +
+  xlab("") + ylab("Power [GW]") +
   facet_wrap(~ mo, ncol = 12, labeller = as_labeller(month.name)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -215,7 +215,7 @@ p2A <- ggplot(df, aes(x = yr, y = geometricMean)) +
   geom_point() +
   scale_y_continuous() +
   scale_x_continuous(breaks = seq(1995, 2015, 10)) +
-  xlab("") + ylab("Energy Dissipation [GW]") +
+  xlab("") + ylab("Power [GW]") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 ```
