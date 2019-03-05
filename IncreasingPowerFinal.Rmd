@@ -95,7 +95,7 @@ scalingFactor <- aM/gM
 
 Compute the energy dissipation of a particular tornado. 
 ```{r}
-Length <- 24 * 1609.4 # path length in miles converted to meters
+Length <- 68 * 1609.4 # path length in miles converted to meters
 Width <- 1760 * .9144 # path width in yards converted to meters
 AreaPath <- Length * Width
 efr <- 4  # maximum EF rating
