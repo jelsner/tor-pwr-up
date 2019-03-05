@@ -34,18 +34,6 @@ load(file = "Sep7.RData")
 #load(file = "Jun7.RData")
 ```
 
-OLD: Get the tornado data. Data are from the Storm Prediction Center (SPC) http://www.spc.noaa.gov/gis/svrgis/.
-```{r, eval=FALSE}
-if(!file.exists("torn")){ 
-    download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/tornado.zip",
-                  destfile = "tornado.zip")
-    unzip("tornado.zip")
-}
-Tor.sfdf <- sf::st_read(dsn = "torn", 
-                      layer = "torn", 
-                      stringsAsFactors = FALSE)
-```
-
 The newest GIS shapefile contains missing geometries for more than 30% of the tornadoes. The number of missing geometries is highest after 1995. Instead use the csv file from https://www.spc.noaa.gov/wcm/#data  Use the start lon/lat and create a `sp` object then convert to `sf`. Set the coordinate reference system (crs) to ESPG 4326.
 ```{r}
 Tor.df <- read.csv(file = "1950-2017_actual_tornadoes.csv") %>%
@@ -103,6 +91,25 @@ quantile(Tor.sfdf$ED, probs = c(.25, .5, .75))/10^9
 gM <- exp(mean(log(Tor.sfdf$ED)))/10^9 # ED in units of gigawatts
 aM; gM
 scalingFactor <- aM/gM
+```
+
+Compute the energy dissipation of a particular tornado. 
+```{r}
+Length <- 24 * 1609.4 # path length in miles converted to meters
+Width <- 1760 * .9144 # path width in yards converted to meters
+AreaPath <- Length * Width
+efr <- 4  # maximum EF rating
+efr1 <- efr + 1
+( ED_LeeCountyAL2019 <- as.vector(midptW^3 %*% percM[efr1, ] * AreaPath) )
+
+Tor.sfdf %>%
+  filter(Year == 2017) %>%
+  summarize(nT = n(),
+            nTg = sum(ED > ED_LeeCountyAL2019),
+            perc = nTg/nT * 100)
+
+Tor.sfdf %>%
+  filter(Year == 2017, ED > ED_LeeCountyAL2019)
 ```
 
 Statistics of energy dissipation by EF rating.
