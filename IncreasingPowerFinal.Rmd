@@ -284,7 +284,8 @@ df <- as.data.frame(Tor.sfdf) %>%
             geometricSD = exp(sqrt(sum((log(ED/10^9/geometricMean))^2/(length(ED/10^9) - 1)))),
             q25ED = quantile(ED, prob = .25)/10^9,
             q75ED = quantile(ED, prob = .75)/10^9,
-            q50ED = quantile(ED, prob = .5)/10^9)
+            q50ED = quantile(ED, prob = .5)/10^9,
+            maxED = max(ED))
 ggplot(df, aes(x = mo, y = q50ED)) +
   geom_bar(stat = "identity", width = 1) +
 #  geom_errorbar(aes(ymin = q25ED, 
