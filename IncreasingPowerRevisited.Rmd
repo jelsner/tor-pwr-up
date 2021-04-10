@@ -1,0 +1,828 @@
+---
+title: "Increasingly Powerful Tornadoes"
+author: "James B. Elsner"
+date: April 2021
+output: 
+  html_document:
+    keep_md: true
+editor_options: 
+  chunk_output_type: console
+---
+
+Using R version 4.0.5 (2021-03-31) -- "Shake and Throw" 
+
+Load packages.
+```{r}
+library(tidyverse)
+library(lubridate)
+library(rgeos)
+library(sf)
+library(xtable)
+```
+
+```{r}
+if(!"1950-2019-torn-aspath" %in% list.files()) {
+download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/1950-2019-torn-aspath.zip",
+              destfile = "1950-2019-torn-aspath.zip")
+unzip("1950-2019-torn-aspath.zip")
+}
+
+Torn.sf <- st_read(dsn = "1950-2019-torn-aspath", 
+                   layer = "1950-2019-torn-aspath")
+
+if(!"1950-2019-torn-inipoint" %in% list.files()) {
+download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/1950-2019-torn-initpoint.zip",
+              destfile = "1950-2019-torn-initpoint.zip")
+unzip("1950-2019-torn-initpoint.zip")
+}
+
+Torn.sf <- st_read(dsn = "1950-2019-torn-initpoint", 
+                   layer = "1950-2019-torn-initpoint")
+```
+
+Keep only tornadoes since 1995.
+```{r}
+Torn.sf <- Torn.sf %>%
+  filter(yr >= 1995 & yr <= 2018)
+```
+
+Match the Edwards et al. filtering
+```{r}
+Torn2.sf <- Torn.sf %>%
+  filter(!st %in% c("AK", "HI", "PR")) %>%
+  filter(mag != -9)
+
+table(Torn2.sf$yr >= 2007)
+
+Torn2.sf %>% 
+  st_drop_geometry() %>% 
+  mutate(epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018"))) %>%
+  group_by(epoch, mag) %>%
+  summarize(countT = n()) %>%
+  group_by(epoch) %>%
+  mutate(percentByRating = prop.table(countT) * 100)
+  
+```
+
+Prepare the tornado data.
+```{r}
+Tor.sfdf <- Tor.sfdf %>%
+  mutate(DateTime = as.POSIXct(paste(yr, mo, dy, time), format = "%Y%m%d%H:%M:%S"),
+         Hour = hour(DateTime),
+         Year = year(DateTime),
+         Length = len * 1609.34,
+         Length = ifelse(Length == 0, min(Length[Length > 0]), Length), #takes care of zero length
+         Width = wid * .9144,
+         Width = ifelse(Width == 0, min(Width[Width > 0]), Width), #takes care of zero width
+         Width = ifelse(Year >= 1995, Width * pi/4, Width), #takes care of change: avg to max
+         cas = inj + fat,
+         AreaPath = Length * Width,
+         Ma = factor(month.abb[mo], levels = month.abb[1:12]))
+```
+
+Compute per-tornado energy dissipation. Energy dissipation is computed as in Fricker et al. (2017).
+```{r}
+perc <- c(1, 0, 0, 0, 0, 0, 
+         .772, .228, 0, 0, 0, 0,
+         .616, .268, .115, 0, 0, 0,
+         .529, .271, .133, .067, 0, 0,
+         .543, .238, .131, .056, .032, 0,
+         .538, .223, .119, .07, .033, .017)
+percM <- matrix(perc, ncol = 6, byrow = TRUE)
+threshW <- c(29.06, 38.45, 49.62, 60.8, 74.21, 89.41)
+midptW <- c(diff(threshW)/2 + threshW[-length(threshW)], threshW[length(threshW)] + 7.5)
+ef <- Tor.sfdf$mag + 1
+EW3 <- numeric()
+for(i in 1:length(ef)) EW3[i] <- midptW^3 %*% percM[ef[i], ]
+Tor.sfdf$e3 <- EW3
+Tor.sfdf$ED <- Tor.sfdf$e3 * Tor.sfdf$AreaPath
+aM <- mean(Tor.sfdf$ED)/10^9
+quantile(Tor.sfdf$ED, probs = c(.25, .5, .75))/10^9
+gM <- exp(mean(log(Tor.sfdf$ED)))/10^9 # ED in units of gigawatts
+aM; gM
+scalingFactor <- aM/gM
+```
+
+Compute the energy dissipation of a particular tornado. 
+```{r}
+Length <- 68 * 1609.4 # path length in miles converted to meters
+Width <- 1760 * .9144 # path width in yards converted to meters
+AreaPath <- Length * Width
+efr <- 4  # maximum EF rating
+efr1 <- efr + 1
+( ED_LeeCountyAL2019 <- as.vector(midptW^3 %*% percM[efr1, ] * AreaPath) )
+
+Tor.sfdf %>%
+  filter(Year == 2017) %>%
+  summarize(nT = n(),
+            nTg = sum(ED > ED_LeeCountyAL2019),
+            perc = nTg/nT * 100)
+
+Tor.sfdf %>%
+  filter(Year == 2017, ED > ED_LeeCountyAL2019)
+```
+
+Statistics of energy dissipation by EF rating.
+```{r}
+as.data.frame(Tor.sfdf) %>%
+  group_by(mag) %>%
+  dplyr::summarize(nT = n(),
+                   Median = median(ED)/10^9,
+                   Total = sum(ED)/10^9,
+                   arithmeticMean = mean(ED)/10^9,
+                   geometricMean = exp(mean(log(ED)))/10^9,
+                   harmonicMean = 1/mean(1/ED)/10^9
+                   ) %>%
+xtable(., digits = 1)
+```
+
+Statistics of energy dissipation by hour of day.
+```{r}
+as.data.frame(Tor.sfdf) %>%
+  group_by(Hour) %>%
+  dplyr::summarize(nT = n(),
+                   Median = median(ED)/10^9,
+                   Total = sum(ED)/10^9,
+                   arithmeticMean = mean(ED)/10^9,
+                   geometricMean = exp(mean(log(ED)))/10^9,
+                   q90 = quantile(ED, probs = .9)/10^9,
+                   q75 = quantile(ED, probs = .75)/10^9
+                   ) %>%
+xtable(., digits = 2)
+```
+
+By date and by outbreak size. Showing that the percentage of strong and violent tornadoes increases with outbreak size is determined by the number of tornadoes per calendar day.
+```{r}
+levels <- c(0, 1, 3, 7, 15, 31, 63, Inf)
+labels <- c("1", "2-3", "4-7", "8-15", "16-31", "32-63", ">63")
+dfx <- as.data.frame(Tor.sfdf) %>%
+  group_by(date) %>%
+  summarize(nT = n(),
+            nST = sum(mag >= 3),
+            nVT = sum(mag >= 4)) %>%
+  mutate(torDaySize = cut(nT, levels, labels = labels)) %>%
+  group_by(torDaySize) %>%
+  summarize(totalCases = n(),
+    totalTornadoes = sum(nT),
+    pST = sum(nST)/totalTornadoes * 100,
+    pVT = sum(nVT)/totalTornadoes * 100)
+dfx
+```
+
+Annual quantiles
+```{r}
+df <- as.data.frame(Tor.sfdf) %>%
+  group_by(yr) %>%
+  dplyr::summarize(nT = n(),
+                   nC = sum(inj + fat),
+                   avgED = mean(ED),
+                   q25ED = quantile(ED, prob = .25),
+                   q75ED = quantile(ED, prob = .75),
+                   q90ED = quantile(ED, prob = .9),
+                   q95ED = quantile(ED, prob = .95),
+                   q50ED = quantile(ED, prob = .5))
+
+p1 <- ggplot(df, aes(x = yr, y = q50ED/10^9)) +
+  geom_errorbar(aes(ymin = q25ED/10^9, ymax = q75ED/10^9), color = "grey", width = .2) +
+  geom_point() +
+  geom_point(aes(x = yr, y = q90ED/10^9), data = df, color = "red") +
+  scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), labels = c(.1, 1, 10, 100, 1000), limits = c(.01, 1000)) +
+  scale_x_continuous(breaks = seq(1995, 2015, 5)) +
+  xlab("Year") + ylab("Power [GW]") +
+  theme_minimal() 
+```
+#### Figure 1
+
+Energy dissipation quantiles by year and month
+```{r}
+df <- as.data.frame(Tor.sfdf) %>%
+  group_by(yr, mo) %>%
+  dplyr::summarize(nT = n(),
+                   nC = sum(inj + fat),
+                   avgED = mean(ED),
+                   q25ED = quantile(ED, prob = .25),
+                   q75ED = quantile(ED, prob = .75),
+                   q90ED = quantile(ED, prob = .9),
+                   q95ED = quantile(ED, prob = .95),
+                   q50ED = quantile(ED, prob = .5))
+
+names(month.name) <- 1:12 # this gives the character vector names corresponding to `mo`.
+p2 <- ggplot(df, aes(x = yr, y = q50ED/10^9)) +
+  geom_errorbar(aes(ymin = q25ED/10^9, ymax = q75ED/10^9), color = "grey", width = .2) +
+  geom_point() +
+  geom_point(aes(x = yr, y = q90ED/10^9), data = df, color = "red", inherit.aes = FALSE) +
+  scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), labels = c(.1, 1, 10, 100, 1000)) +
+  scale_x_continuous(breaks = seq(1995, 2015, 10)) +
+  xlab("") + ylab("Power [GW]") +
+  facet_wrap(~ mo, ncol = 12, labeller = as_labeller(month.name)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+df <- as.data.frame(Tor.sfdf) %>%
+  group_by(yr) %>%
+  dplyr::summarize(nT = n(),
+                   nC = sum(inj + fat),
+                   geometricMean = exp(mean(log(ED)))/10^9,
+                   geometricSD = exp(sqrt(sum((log(ED/geometricMean))^2/(length(ED) - 1))))/10^9,
+                   lb = geometricMean/geometricSD,
+                   ub = geometricMean * geometricSD)
+
+p2A <- ggplot(df, aes(x = yr, y = geometricMean)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), color = "grey", width = .2) +
+  geom_point() +
+  scale_y_continuous() +
+  scale_x_continuous(breaks = seq(1995, 2015, 10)) +
+  xlab("") + ylab("Power [GW]") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+Energy quantiles by hour of day
+```{r}
+df <- as.data.frame(Tor.sfdf) %>%
+  group_by(Hour) %>%
+  dplyr::summarize(nT = n(),
+                   nC = sum(inj + fat),
+                   arithmeticED = mean(ED),
+                   geometricMean = exp(mean(log(ED))),
+                   q25ED = quantile(ED, prob = .25),
+                   q75ED = quantile(ED, prob = .75),
+                   q90ED = quantile(ED, prob = .9),
+                   q95ED = quantile(ED, prob = .95),
+                   q99ED = quantile(ED, prob = .99),
+                   q50ED = quantile(ED, prob = .5),
+                   maxED = max(ED))
+
+p3 <- ggplot(df, aes(x = Hour, y = q50ED/10^9)) +
+  geom_errorbar(aes(ymin = q25ED/10^9, ymax = q75ED/10^9), color = "grey", width = .2) +
+  geom_point() +
+  geom_point(aes(x = Hour, y = q90ED/10^9), data = df, color = "red") +
+  scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), labels = c(.1, 1, 10, 100, 1000), limits = c(.01, 1000)) +
+  scale_x_continuous(breaks = 0:23) +
+  xlab("Local Hour of Occurrence [+/- one hr]") + ylab("Power [GW]") +
+  theme_minimal() +
+  ggtitle("B")
+```
+
+Polar coordinate plots.
+```{r}
+labsHours <- c("Midnight", "2 am", "4 am", "6 am", "8 am", "10 am", "Noon", "2 pm", "4 pm", "6 pm", "8 pm", "10 pm")
+c1 <- ggplot(df, aes(Hour, nT)) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(breaks = seq(0, 23, 2), 
+                     labels = labsHours) +
+  coord_polar(start = -0.12) +
+  labs(x = "Time of Day", y = "Number of Tornadoes") +
+  theme_minimal()
+c2 <- ggplot(df, aes(Hour, geometricMean/10^9)) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(breaks = seq(0, 23, 2), 
+                     labels = labsHours) +
+  coord_polar(start = -0.12) +
+  labs(x = "Time of Day", y = "Average (geometric) Tornado Power (GW)") +
+  theme_minimal()
+```
+
+Put multiple plots on the same page using **patchwork**.  Thanks to https://github.com/thomasp85/patchwork/ If `library(patchwork)` from Thomas Lin Pedersen returns an error. Install `ggplot2` from GitHub (Hadley Wickham). Restart your R session.
+```{r}
+#devtools::install_github("thomasp85/patchwork")
+#devtools::install_github("hadley/ggplot2")
+library(ggplot2)
+library(patchwork)
+c1 + c2
+```
+
+Repeat polar coordinate plot with monthly means.
+```{r}
+df <- as.data.frame(Tor.sfdf) %>%
+  group_by(mo) %>%
+  summarize(arthmeticMean = mean(ED)/10^9,
+            geometricMean = exp(mean(log(ED)))/10^9,
+            geometricSD = exp(sqrt(sum((log(ED/10^9/geometricMean))^2/(length(ED/10^9) - 1)))),
+            q25ED = quantile(ED, prob = .25)/10^9,
+            q75ED = quantile(ED, prob = .75)/10^9,
+            q50ED = quantile(ED, prob = .5)/10^9,
+            maxED = max(ED))
+ggplot(df, aes(x = mo, y = q50ED)) +
+  geom_bar(stat = "identity", width = 1) +
+#  geom_errorbar(aes(ymin = q25ED, 
+#                    ymax = q75ED),
+#                    width = .2) +
+  scale_x_continuous(breaks = seq(1, 12, 1), labels = month.abb) +
+  scale_y_continuous(limits = c(0, NA)) +
+  coord_polar(start = 0) +
+  labs(x = "Month", y = "Average (geometric) Tornado Power (GW)") +
+  theme_minimal()
+```
+
+Compare with monthly and hourly distributions of casualties.
+```{r}
+df <- as.data.frame(Tor.sfdf) %>%
+  filter(cas > 0) %>%
+  group_by(mo) %>%
+  summarize(nT = n(),
+            nCas = sum(cas),
+            perTorCas = nCas/nT)
+ggplot(df, aes(x = mo, y = perTorCas)) +
+  geom_bar(stat = "identity", width = 1) +
+  scale_x_continuous(breaks = seq(1, 12, 1), labels = month.abb) +
+  coord_polar(start = 0) +
+  labs(x = "Month", y = "Number of Casualties Per\n Casualty-Producing Tornado") +
+  theme_minimal()
+
+df <- as.data.frame(Tor.sfdf) %>%
+  filter(cas > 0) %>%
+  group_by(Hour) %>%
+  summarize(nT = n(),
+            nCas = sum(cas),
+            perTorCas = nCas/nT)
+ggplot(df, aes(x = Hour, y = perTorCas)) +
+  geom_bar(stat = "identity", width = 1) +
+  scale_x_continuous(breaks = seq(0, 23, 2), labels = labsHours) +
+  coord_polar(start = -.12) +
+  labs(x = "Time of Day", y = "Casualty Rate Per\n Casualty-Producing Tornado") +
+  theme_minimal()
+```
+
+Draw a smoothed curve through the counts.
+```{r}
+y <- df$perTorCas
+y <- c(y, y, y)
+x.mid <- 1:24; offset <- 24
+y.smooth <- lowess(y, f = 1/4)
+df$ys <- y.smooth$y[x.mid + offset]
+
+ggplot(df, aes(x = Hour, y = perTorCas)) +
+  geom_bar(stat = "identity", width = 1) +
+  geom_line(aes(y = ys), color = "red") +
+  scale_x_continuous(breaks = seq(0, 23, 2), labels = labsHours) +
+  coord_polar(start = -.12) +
+  labs(x = "Local Time of Day", y = "Casualty Rate Per\n Casualty-Producing Tornado") +
+  theme_minimal()
+```
+
+Putting multiple plots together in a patchwork.
+```{r}
+(p1 + p3) / p2
+```
+
+Get the ENSO variable http://www.esrl.noaa.gov/psd/data/correlation/censo.data. Here we use the bivariate ENSO. Join to per tornado data frame with the `left_join()` function. We also get the western Caribbean SST (WCA) as used in the seasonal prediction model. 
+
+SST bbox: 35, 10, -97, -70, monolevel variable,  https://www.esrl.noaa.gov/psd/cgi-bin/data/timeseries/timeseries1.pl
+```{r}
+ENSO <- read.table("ENSO.txt", header = TRUE) %>%
+  filter(Year >= 1994)
+ENSO.df <- reshape2::melt(ENSO, id.vars = "Year")
+names(ENSO.df) <- c("yr", "mo.abb", "ENSO")
+
+SST <- read.table("SST.txt", header = TRUE) %>%
+  filter(Year >= 1994)
+SST.df <- reshape2::melt(SST, id.vars = "Year")
+names(SST.df) <- c("yr", "mo.abb", "SST")
+
+df <- as.data.frame(Tor.sfdf) %>%
+  mutate(mo.abb = month.abb[mo]) %>%
+  left_join(ENSO.df)
+df <- left_join(df, SST.df)
+df$After2007 <- df$yr >= 2007
+```
+
+Change point in 2007. Use of the Enhanced Fujita Scale.
+
+The geometric standard deviation describes the spread in the set of energy dissipation values as a (dimensionless) multiplicative factor relative to the geometric mean. The one standard deviation range about the mean is obtained by dividing and multipling the geometric mean by the geometric standard deviation.
+$$\sigma_g = \exp \left( \sqrt{ \sum_{i=1}^n \left( \ln { x_i \over \mu_g } \right)^2 \over n-1 } \right)$$
+
+```{r}
+p4 <- df %>%
+  group_by(After2007) %>%
+  summarize(arthmeticMean = mean(ED)/10^9,
+            geometricMean = exp(mean(log(ED)))/10^9,
+            geometricSD = exp(sqrt(sum((log(ED/geometricMean))^2/(length(ED) - 1))))/10^9,
+            lb = geometricMean/geometricSD,
+            ub = geometricMean * geometricSD,
+            harmonicMean = 1/mean(1/ED)/10^9) %>%
+  ggplot(., aes(x = After2007, y = geometricMean)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), col = "grey", width = 0, size = 2) +
+  geom_point() +
+  xlab("") + ylab("Energy Dissipation [GW]") +
+  scale_x_discrete(labels = c("F Scale", "EF Scale")) +
+  scale_y_continuous(limits = c(0, NA)) +
+  ggtitle("A") +
+  theme_minimal()
+```
+
+Repeat for path length and width
+```{r}
+df %>%
+  group_by(After2007) %>%
+  summarize(arithmeticMean = mean(Width),
+            geometricMean = exp(mean(log(Width))),
+            geometricSD = exp(sqrt(sum((log(Width/geometricMean))^2/(length(Width) - 1)))),
+            lb = geometricMean/geometricSD,
+            ub = geometricMean * geometricSD) %>%
+  ggplot(., aes(x = After2007, y = geometricMean)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), col = "grey", width = 0, size = 2) +
+  geom_point() +
+  xlab("") + ylab("Length [m]") +
+  scale_x_discrete(labels = c("F Scale", "EF Scale")) +
+  scale_y_continuous(limits = c(0, NA)) +
+  theme_minimal()
+
+df %>%
+  group_by(After2007) %>%
+  summarize(nT = n(),
+            nT345 = sum(mag >=3)/nT)
+```
+
+Joy plots
+```{r}
+library(ggridges)
+S1 <- ggplot(df, aes(x = Length/1000, y = Year, group = Year, height = ..density..)) +
+     geom_density_ridges(scale = 5, color = "white") + 
+     scale_x_log10(breaks = c(.1, 1, 10, 100), labels = c(".1", "1", "10", "100")) +
+     scale_y_reverse(breaks = seq(1995, 2015, 5)) +
+     ylab("") + xlab("Path Length (km)")
+
+S2 <- ggplot(df, aes(x = Width, y = Year, group = Year, height = ..density..)) +
+     geom_density_ridges(scale = 5, color = "white") + 
+     scale_x_log10(limits = c(1, NA), breaks = c(.1, 1, 10, 100), labels = c(".1", "1", "10", "100")) +
+     scale_y_reverse(breaks = seq(1995, 2015, 5)) +
+     ylab("") + xlab("Path Width (m)")
+S1 + S2
+```
+#### Figure S1 
+Path widths narrower than 1 meter are not plotted.
+
+Monthly and hourly
+```{r}
+p5 <- df %>%
+  group_by(Ma) %>%
+  summarize(arthmeticMean = mean(ED)/10^9,
+            geometricMean = exp(mean(log(ED)))/10^9,
+            geometricSD = exp(sqrt(sum((log(ED/geometricMean))^2/(length(ED) - 1))))/10^9,
+            lb = geometricMean/geometricSD,
+            ub = geometricMean * geometricSD,
+            harmonicMean = 1/mean(1/ED)/10^9) %>%
+ggplot(., aes(x = Ma, y = geometricMean)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), col = "grey", width = 0, size = 2) +
+  geom_point() +
+  xlab("") + ylab("Energy Dissipation [GW]") +
+  scale_y_continuous(limits = c(0, NA)) +
+  ggtitle("C") +
+  theme_minimal()
+
+labelsHour <- c("Midnight", "3am", "6am", "9am", "Noon", "3pm", "6pm", "9pm")
+p6 <- df %>%
+  group_by(Hour) %>%
+  summarize(arthmeticMean = mean(ED)/10^9,
+            geometricMean = exp(mean(log(ED)))/10^9,
+            geometricSD = exp(sqrt(sum((log(ED/geometricMean))^2/(length(ED) - 1))))/10^9,
+            lb = geometricMean/geometricSD,
+            ub = geometricMean * geometricSD,
+            harmonicMean = 1/mean(1/ED)/10^9) %>%
+ggplot(., aes(x = Hour, y = geometricMean)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), col = "gray", width = 0, size = 2) +
+  geom_point() +
+#  xlab("Local Hour of Occurrence [+/- one hr]") 
+  xlab("") + ylab("Energy Dissipation [GW]") +
+  scale_x_continuous(breaks = seq(0, 23, by = 3), 
+                     labels = labelsHour) +
+  scale_y_continuous(limits = c(0, NA)) +
+  ggtitle("D") +
+  theme_minimal()
+
+p7 <- df %>%
+  group_by(ENSO > 0) %>%
+  summarize(arthmeticMean = mean(ED)/10^9,
+            geometricMean = exp(mean(log(ED)))/10^9,
+            geometricSD = exp(sqrt(sum((log(ED/geometricMean))^2/(length(ED) - 1))))/10^9,
+            lb = geometricMean/geometricSD,
+            ub = geometricMean * geometricSD,
+            harmonicMean = 1/mean(1/ED)/10^9) %>%
+ggplot(., aes(x = `ENSO > 0`, y = geometricMean)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), col = "grey", width = 0, size = 2) +
+  geom_point() +
+  xlab("") + ylab("Energy Dissipation [GW]") +
+  scale_x_discrete(labels = c("La Nina", "El Nino")) +
+  scale_y_continuous(limits = c(0, NA)) +
+  ggtitle("B") +
+  theme_minimal()
+
+(p4 + p7 + p5 + plot_layout(ncol = 3, widths = c(1, 1, 3))) / p6
+```
+#### Figure 2
+
+Path length by EF rating and month. Hypothesis: violent tornadoes have shorter paths during May than during November.
+```{r}
+df %>%
+  filter(mag >= 3) %>%
+  group_by(mo) %>%
+  summarize(medianPathLength = median(Length))
+
+df %>%
+  group_by(mo) %>%
+  summarize(nT = n(),
+            nT3 = sum(mag >= 3),
+            nT4 = sum(mag >= 4),
+            nT5 = sum(mag == 5),
+            mPL3 = median(Length[mag >= 3]),
+            mPL4 = median(Length[mag >= 4]),
+            mPL5 = median(Length[mag == 5]))
+```
+
+### Models
+
+Start with a log-linear mixed model using the `lmer()` function from the **lme4** package. The response variable is the natural logarithm of energy dissipation. Random intercept on the month and hour term.
+```{r}
+library(lme4)
+model0 <- lmer(log(ED) ~  ENSO + After2007 + I(yr - 2002) + longitude * latitude + (1|mo) + (1|Hour), data = df)
+model0a <- lmer(log(ED) ~ ENSO + SST + After2007 + I(yr - 2002) + longitude * latitude + (1|mo) + (1|Hour), data = df)
+
+summary(model0a)
+ranef(model0a)
+```
+
+All Bayesian models were created in Stan computational framework (http://mc-stan.org/) accessed with **brms** package (Burkner 2017). To improve convergence and guard against overfitting, we specified mildly informative conservative priors.
+```{r}
+library(brms)
+```
+
+The most important reason to use the `control` argument is to decrease (or preferably) eliminate the number of divergent transitions that cause a bias in the posterior samples. With a warning `There were divergent transitions after warmup` you should increase the `adapt_delta`. For example `control = list(adapt_delta = .95)`. The default is a  value of .8. Increasing the value slows down the sampler.
+```{r}
+#formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + s(mo) + s(Hour)  # Model in the May2.RData file
+formula <- ED | trunc(lb = 444000) ~ ENSO + After2007 + I(yr - 2002) + (1|mo) + (1|Hour) # Model as in the lmer specification (Jun7.RData)
+family <- brms::lognormal()
+
+get_prior(formula, data = df, family = family)
+```
+
+Sample from the priors.
+```{r}
+priors <- brm(formula = formula,
+              data = df, family = family,
+              prior = c(set_prior("normal(0,5)", class = "b"),
+                    set_prior("student_t(3, 22, 10)", class = "Intercept"),
+                    set_prior("student_t(3, 0, 10)", class = "sd"),
+                    set_prior("student_t(3, 0, 10)", class = "sigma")),
+          sample_prior = "only", seed = 9112,
+          control = list(adapt_delta = .8))
+
+out <- predict(priors, probs = c(0, 1))
+```
+
+The model formula is a truncated log-normal distribution to reflect a threshold energy below which tornadoes have never occurred. We set this threshold at 4.440 GW just below the 4.445 GW weakest tornado in the record.
+
+Fit the model
+```{r}
+post <- brm(formula = formula,
+             data = df, family = family,
+             prior = c(set_prior("normal(0,5)", class = "b"),
+                       set_prior("student_t(3, 22, 10)", class = "Intercept"),
+                       set_prior("student_t(3, 0, 10)", class = "sd"),
+                       set_prior("student_t(3, 0, 10)", class = "sigma")),
+              inits = "0", seed = 9112,
+              control = list(adapt_delta = .8))
+
+summary(post)
+save.image("Sep7")
+```
+
+The wiggly parts of the spline basis are treated as a random effects and their associated variance parameter `sigma` controls the degree of wiggliness of the fitted spline. The perfectly smooth parts of the basis are treated as a fixed effect (`smo_1`).
+
+```{r}
+coefTable <- as.data.frame(summary(post)$fixed) %>%
+  mutate(lb = exp(`l-95% CI`),
+         ub = exp(`u-95% CI`),
+         mi = exp(`Estimate`),
+         id = 1:4) %>%
+  filter(id > 1)
+
+ggplot(coefTable, aes(x = id, y = mi)) +
+  geom_hline(yintercept = 1, color = "grey", linetype = "solid") +
+  geom_hline(yintercept = c(.75, 1.25, 1.5, 1.75), color = "grey", linetype = "dashed") +
+  geom_point() +  
+  geom_errorbar(aes(x = id, ymin = lb, ymax = ub), col = "red", width = 0, size = 2) +
+  geom_point() +
+  scale_x_reverse(breaks = 2:4, labels = c("ENSO", "EF Rating", "Trend")) +
+  scale_y_continuous(limits = c(.75, 1.75)) +
+  ylab("Multiplicative Change") + xlab("") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  coord_flip() 
+```
+
+The **sjstats** package for model summaries on models fit using the **brms** package.
+https://www.r-bloggers.com/r-functions-for-bayesian-model-statistics-and-summaries-rstats-stan-brms/
+
+```{r}
+library(sjstats)
+hdi(post, type = "fixed")
+```
+
+```{r}
+tidy_stan(post, digits = 3)
+```
+
+
+```{r, eval=FALSE}
+pp_check(model, type = "stat")
+#pp_check(model, type = "ecdf_overlay")
+```
+
+The distribution of the posterior mean energy dissipation (on a log scale) against the average. It looks good.
+
+The `posterior_predict()` function generates samples of ED. Compare the distribution of ED statistics (mean, max) with actual ED.
+```{r}
+yrep <- posterior_predict(post, nsamples = 4000)
+df.yrep <- as.data.frame(yrep)
+df.out <- reshape2::melt(df.yrep) %>%
+  group_by(variable) %>%
+  summarize(mx = max(value),
+            mn = exp(mean(log(value))))
+```
+
+```{r}
+p8 <- ggplot(df.out, aes(mn/10^9)) + 
+  geom_histogram(fill = "red", bins = 21, color = "white") +
+#  geom_freqpoly() +
+  scale_x_log10(breaks = c(1, 5, 10, 20, 40, 80)) +
+  geom_vline(xintercept = exp(mean(log(df$ED)))/10^9, color = "black", size = 1) +
+  ylab("Posterior Frequency") +
+  xlab("Average Per-Tornado Power [GW]") +
+#  ggtitle("A") +
+  theme_minimal()
+
+p9 <- ggplot(df.out, aes(mx/10^9)) + 
+  scale_x_log10(breaks = c(10000, 100000, 1000000), labels = c("10,000", "100,000", "1,000,000")) +
+  geom_histogram(fill = "red", bins = 21, color = "white") +
+  geom_vline(xintercept = max(df$ED)/10^9, color = "black", size = 1) +
+  ylab("Posterior Frequency") +
+  xlab("Maximum Per-Tornado Power [GW]") +
+#  ggtitle("B") +
+  theme_minimal()
+
+p8 + p9
+```
+
+Conditioning plots
+```{r, eval=FALSE}
+plot(marginal_effects(post))
+```
+
+Here use the conditionals that are pre-specified.
+```{r}
+EFmarginal <- marginal_effects(post, method = "fitted")$After2007
+
+p10 <- ggplot(EFmarginal, aes(x = After2007, y = estimate__/10^9)) +
+  geom_errorbar(aes(ymin = lower__/10^9 , ymax = upper__/10^9), col = "red", width = 0, size = 2) +
+  geom_point() +
+#  scale_y_log10() +
+  scale_y_continuous(limits = c(0, NA)) +
+  scale_x_discrete(labels = c("F Scale", "EF Scale")) +
+  ylab("Conditional Energy Dissipation [GW]") + xlab("") +
+  ggtitle("A") +
+  theme_minimal()
+
+ENSOmarginal <- marginal_effects(post)$ENSO
+
+p11 <- ggplot(ENSOmarginal, aes(x = ENSO, y = estimate__/10^9)) +
+  geom_ribbon(aes(ymin = lower__/10^9 , ymax = upper__/10^9), alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
+  scale_x_continuous() +
+  geom_line(size = 1.2) +
+  ylab("Conditional Energy Dissipation [GW]") + xlab("ENSO [s.d.]") +
+  ggtitle("B") +
+  theme_minimal()
+
+p10 + p11 
+```
+
+Trend. With `method = "fitted"` the graph is computed as the arithmetic average ED over all the outcomes in the event space (e.g., yr = 1994, Hour = 15, mo = 6, etc). With `method = "predict"` the graph is the predicted geometric mean for specific values of the covariaties. We divide the fitted by the scaling factor.
+```{r}
+TrendmarginalF <- marginal_effects(post, method = "fitted")$yr
+TrendmarginalP <- marginal_effects(post, method = "predict")$yr
+
+ggplot(TrendmarginalF, aes(x = yr, y = estimate__/10^9/scalingFactor)) +
+  geom_ribbon(aes(ymin = lower__/10^9/scalingFactor, ymax = upper__/10^9/scalingFactor), 
+              alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
+#  scale_y_log10() +
+  geom_line(size = 1.2) +
+  ylab("Conditional Power [GW]") + xlab("") +
+  theme_minimal()
+```
+
+Specify the conditions. Predicted energy dissipation with neutral ENSO after 2007. The ribbon is based on the upper and lower 90% credible interval.
+```{r}
+conditions <- data.frame(ENSO = 0, After2007 = TRUE)
+TrendmarginalF <- marginal_effects(post, conditions = conditions, probs = c(.1, .9), robust = FALSE, method = "fitted")$yr
+
+ggplot(TrendmarginalF, aes(x = yr, y = estimate__/10^9/scalingFactor)) +
+  geom_ribbon(aes(ymin = lower__/10^9/scalingFactor, ymax = upper__/10^9/scalingFactor), alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
+  scale_x_continuous(breaks = seq(1995, 2015, 5)) +
+  geom_line() +
+  ylab("Predicted Energy Dissipation [GW]") + xlab("") +
+  theme_minimal()
+```
+
+```{r}
+conditions <- data.frame(mo = 1:12, ENSO = 0, After2007 = TRUE, Hour = 10)
+Trendmarginal2 <- marginal_effects(model, effects = c("yr"), conditions = conditions, method = "fitted")$yr
+Trendmarginal2p <- marginal_effects(model, conditions = conditions, method = "predict", probs = c(.25, .75))$yr
+
+ggplot(Trendmarginal2p, aes(x = yr, y = estimate__/10^9)) +
+#  geom_ribbon(aes(ymin = lower__/10^9 , ymax = upper__/10^9), alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
+  scale_x_continuous(breaks = seq(1995, 2015, 10)) +
+  geom_line() +
+  ylab("Conditional Energy Dissipation [GW]") + xlab("") +
+  facet_wrap(~ mo, ncol = 12, labeller = as_labeller(month.name)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+conditions <- data.frame(mo = 1:12, ENSO = rep(c(2, -2), each = 12), After2007 = rep(c(FALSE, TRUE), each = 24))
+Trendmarginal2 <- marginal_effects(model, conditions = conditions)$yr
+
+ggplot(Trendmarginal2, aes(x = yr, y = estimate__/10^9)) +
+  geom_ribbon(aes(ymin = lower__/10^9 , ymax = upper__/10^9), alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
+  geom_line() +
+  ylab("Conditional Energy Dissipation [GW]") + xlab("Year") +
+  facet_wrap(~ ENSO + mo, ncol = 3) +
+  theme_minimal()
+
+df2 <- Trendmarginal2 %>%
+  filter(yr == 2016, After2007 == TRUE)
+
+ggplot(df2, aes(x = mo, y = estimate__/10^9, color = as.factor(ENSO))) +
+  geom_errorbar(aes(x = mo, ymin = lower__/10^9, ymax = upper__/10^9, color = as.factor(ENSO)), 
+                width = 0, size = 1, position = position_dodge(width = .5)) +
+  geom_point(aes(x = mo, y = estimate__/10^9, color = as.factor(ENSO)), position = position_dodge(width = .5)) +
+  scale_y_continuous(limits = c(0, NA)) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  scale_color_discrete(name = "", 
+                       breaks=c(-2, 2),
+                       labels=c("La Nina", "El Nino")) +
+  xlab("") + ylab("Conditional Energy Dissipation [GW]") +
+  theme_minimal() 
+
+conditions <- data.frame(mo = 2, ENSO = 0, After2007 = TRUE, Hour = 18)
+Trendmarginal3 <- marginal_effects(model, conditions = conditions)$yr
+
+ggplot(Trendmarginal3, aes(x = yr, y = estimate__/10^9)) +
+  geom_ribbon(aes(ymin = lower__/10^9 , ymax = upper__/10^9), alpha = 1, col = "red", fill = "red") +
+  scale_y_continuous(limits = c(0, NA)) +
+  geom_line() +
+  ylab("Conditional Energy Dissipation [GW]") + xlab("Year") +
+  theme_minimal()
+```
+
+Compare with Stan model fixed effects with the same fixed effects from an INLA model.
+```{r}
+#source("http://www.math.ntnu.no/inla/givemeINLA.R")
+library('INLA')
+```
+
+```{r}
+df2 <- df %>%
+  filter(mag >= 0)
+formula <- ED ~ ENSO + After2007 + I(yr - 2002) +
+  f(Ma, model = "seasonal", season.length = 12, param = c(1, .1)) +
+  f(Hour, model = "seasonal", season.length = 24, param = c(1, .1))
+family <- "lognormal"
+startTime <- Sys.time()
+modeli <- inla(formula = formula, 
+               family = family,
+               data = df2,
+               control.compute = list(config = TRUE))
+Sys.time() - startTime
+summary(modeli)
+```
+
+Compare fixed effects Stan vs INLA.
+```{r}
+coefTable2 <- as.data.frame(modeli$summary.fixed) %>%
+  mutate(lb2 = exp(`0.025quant`),
+         ub2 = exp(`0.975quant`),
+         mi2 = exp(`mean`),
+         id = seq(1.25, 4.25, by = 1)) %>%
+  filter(id > 1.25)
+
+ggplot(coefTable, aes(x = id, y = mi)) +
+  geom_hline(yintercept = 1, color = "grey", linetype = "dashed") +
+  geom_point() +  
+  geom_errorbar(aes(x = id, ymin = lb, ymax = ub), col = "red", width = 0, size = 2) +
+  geom_point() +
+  geom_point(aes(x = id, y = mi2), data = coefTable2) +
+  geom_errorbar(aes(x = id, y = mi2, ymin = lb2, ymax = ub2), data = coefTable2, col = "red", width = 0, size = 2) +
+  geom_point(aes(x = id, y = mi2), data = coefTable2) +
+  scale_x_reverse(breaks = c(2.125, 3.125, 4.125), labels = c("ENSO", "EF Rating", "Trend")) +
+  scale_y_continuous(breaks = seq(.8, 1.6, .2), labels = seq(.8, 1.6, .2), limits = c(.75, 1.7)) +
+  ylab("Multiplicative Change") + xlab("") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  coord_flip()
+```
