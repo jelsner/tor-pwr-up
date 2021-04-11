@@ -15,6 +15,7 @@ Load packages.
 ```{r}
 library(tidyverse)
 library(lubridate)
+library(ggplot2)
 library(rgeos)
 library(sf)
 library(xtable)
@@ -40,28 +41,132 @@ Torn.sf <- st_read(dsn = "1950-2019-torn-initpoint",
                    layer = "1950-2019-torn-initpoint")
 ```
 
-Keep only tornadoes since 1995.
+Keep only tornadoes since 1995. Filter to try and match Edwards et al. filtering (Table 1). Add some grouping variables.
 ```{r}
 Torn.sf <- Torn.sf %>%
-  filter(yr >= 1995 & yr <= 2018)
+  filter(yr >= 1995 & yr <= 2018) %>%
+  filter(!st %in% c("AK", "HI", "PR")) %>%
+  filter(wid != 0 | len != 0) %>%
+  filter(mag >= 0) %>%
+  mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018"))) %>%
+  mutate(ThreeYearBins = cut(yr, seq(1994, 2018, by = 3),
+                             labels = c("1995-1997", "1998-2000", "2001-2003", "2004-2006",
+                                        "2007-2009", "2010-2012", "2013-2015", "2016-2018"))) %>%
+  mutate(Plains = st %in% c("NE", "KS", "OK", "TX", "IA", "SD", "CO", "ND"),
+         Southeast = st %in% c("AR", "MS", "AL", "LA", "GA", "TN")) %>%
+  mutate(Length = len * 1609.34,
+         Width = wid * .9144)
 ```
 
-Match the Edwards et al. filtering
 ```{r}
-Torn2.sf <- Torn.sf %>%
-  filter(!st %in% c("AK", "HI", "PR")) %>%
-  filter(mag != -9)
-
-table(Torn2.sf$yr >= 2007)
-
-Torn2.sf %>% 
+Torn.sf %>% 
   st_drop_geometry() %>% 
-  mutate(epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018"))) %>%
-  group_by(epoch, mag) %>%
+  group_by(Epoch, mag) %>%
   summarize(countT = n()) %>%
-  group_by(epoch) %>%
+  group_by(Epoch) %>%
   mutate(percentByRating = prop.table(countT) * 100)
+
+Torn.sf %>% 
+  st_drop_geometry() %>% 
+  group_by(Epoch, Plains, Southeast) %>%
+  summarize(countT = n()) %>%
+  group_by(Epoch) %>%
+  mutate(percentByRegion = prop.table(countT) * 100)
+```
+
+557/2650 = 21% more tornadoes in the Southeast
+
+Figure 2
+```{r}
+# Percent of year at 50th EF1+ tornado
+df2 <- Torn2.sf %>%
+  st_drop_geometry() %>%
+  filter(st %in% c("AR", "MS", "AL", "LA", "GA", "TN")) %>%
+#  filter(st %in% c("NE", "KS", "OK", "TX", "IA", "SD", "CO", "ND")) %>%
+  filter(mag >= 1) %>%
+  mutate(DoY = yday(as.Date(date))) %>%
+  group_by(yr) %>%
+  summarize(DoY25 = nth(DoY, 25),
+            DoY50 = nth(DoY, 50),
+            DoY75 = nth(DoY, 75)) %>%
+  mutate(PerYear25 = DoY25/yday(ymd(paste0(yr,"12","31"))),
+         PerYear50 = DoY50/yday(ymd(paste0(yr,"12","31"))),
+         PerYear75 = DoY75/yday(ymd(paste0(yr,"12","31"))),
+         Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018")))
+
+df2 %>%
+  summarize(avg25 = mean(PerYear25),
+            avg50 = mean(PerYear50),
+            avg75 = mean(PerYear75))
+
+wilcox.test(PerYear100 ~ Epoch, data = df2)
+
+df2 %>% 
+  group_by(Epoch) %>%
+  summarize(meanPerYear25 = mean(PerYear25),
+            meanPerYear50 = mean(PerYear50),
+            meanPerYear75 = mean(PerYear75),
+            varPerYear25 = var(PerYear25),
+            varPerYear50 = var(PerYear50),
+            varPerYear75 = var(PerYear75))
+
+ggplot(data = df2,
+       mapping = aes(x = yr, y = PerYear50, fill = Epoch, label = round(PerYear50 * 100, digits = 1))) +
+    scale_fill_manual(values = c("blue", "red")) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    scale_x_continuous(breaks = 1995:2019, labels = 1995:2019) +
+    geom_col(show.legend = FALSE) +
+    geom_text(nudge_y = .005) +
+    ggtitle(label = "Percent of year before the 50th EF1+ tornado",
+            subtitle = "Grouped before (blue) and after the EF rating change") +
+    xlab("") + ylab("") +
+    theme_minimal()
   
+
+# Median day of year 
+Torn2.sf %>%
+  st_drop_geometry() %>%
+  filter(mag >= 1) %>%
+  mutate(DoY = yday(as.Date(date))) %>%
+  group_by(yr) %>%
+  summarize(medianDoY = median(DoY)) %>%
+  mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018"))) %>%
+  ggplot(mapping = aes(x = yr, y = medianDoY, fill = Epoch)) +
+    geom_col(show.legend = FALSE)
+```
+
+Figure 3
+```{r}
+df3 <- Torn2.sf %>%
+  st_drop_geometry() %>%
+  filter(st %in% c("AR", "MS", "AL", "LA", "GA", "TN")) %>%
+#  filter(st %in% c("NE", "KS", "OK", "TX", "IA", "SD", "CO", "ND")) %>%
+  group_by(yr) %>%
+  summarize(ratio21 = sum(mag >= 2)/sum(mag >= 1),
+            ratio32 = sum(mag >= 3)/sum(mag >= 2),
+            ratio43 = sum(mag >= 4)/sum(mag >= 3),
+            Avg = mean(c(ratio21, ratio32, ratio43))) %>%
+   mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018")))
+
+df3 %>%
+  summarize(AvgRatio21 = mean(ratio21),
+            AvgRatio32 = mean(ratio32),
+            AvgRatio43 = mean(ratio43),
+            AvgAvg = mean(Avg))
+
+   ggplot(data = df3,
+          mapping = aes(x = yr, y = Avg, color = Epoch)) +
+    scale_color_manual(values = c("blue", "red")) +
+    scale_y_continuous(limits = c(0, NA)) +
+    geom_point(show.legend = FALSE) 
+```
+
+Group years in 3-year intervals
+```{r}
+df4 <- Torn2.sf %>%
+  mutate(ThreeYearBins = cut(yr, seq(1994, 2019, by = 3),
+                             labels = c("1995-1997", "1998-2000", "2001-2003", "2004-2006",
+                                        "2007-2009", "2010-2012", "2013-2015", "2016-2018")))
 ```
 
 Prepare the tornado data.
