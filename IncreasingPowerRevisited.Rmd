@@ -74,7 +74,8 @@ Torn.sf %>%
   mutate(percentByRegion = prop.table(countT) * 100)
 ```
 
-557/2650 = 21% more tornadoes in the Southeast
+557/2650 = 21% more tornadoes in the Southeast 1995-2006 vs 2007-2018
+723/6267 = 12% fewer tornadoes in the Plains 1995-2006 vs 2007-2018
 
 Figure 2
 ```{r}
