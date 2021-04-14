@@ -44,16 +44,22 @@ Torn.sf <- st_read(dsn = "1950-2019-torn-initpoint",
 Keep only tornadoes since 1995. Filter to try and match Edwards et al. filtering (Table 1). Add some grouping variables.
 ```{r}
 Torn.sf <- Torn.sf %>%
-  filter(yr >= 1995 & yr <= 2018) %>%
+  filter(yr >= 1995 & yr <= 2019) %>%
   filter(!st %in% c("AK", "HI", "PR")) %>%
   filter(wid != 0 | len != 0) %>%
   filter(mag >= 0) %>%
+  mutate(Damage = factor(case_when(mag <= 1 ~ "Minor",
+                                   mag >= 2 ~ "Significant"))) %>%
   mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018"))) %>%
   mutate(ThreeYearBins = cut(yr, seq(1994, 2018, by = 3),
                              labels = c("1995-1997", "1998-2000", "2001-2003", "2004-2006",
                                         "2007-2009", "2010-2012", "2013-2015", "2016-2018"))) %>%
   mutate(Plains = st %in% c("NE", "KS", "OK", "TX", "IA", "SD", "CO", "ND"),
          Southeast = st %in% c("AR", "MS", "AL", "LA", "GA", "TN")) %>%
+  mutate(Location = factor(case_when(Plains ~ "Plains",
+                               Southeast ~ "Southeast",
+                               !Plains & !Southeast ~ "Outside Plains & Southeast"),
+                            levels = c("Plains", "Southeast", "Outside Plains & Southeast"))) %>%
   mutate(Length = len * 1609.34,
          Width = wid * .9144)
 ```
@@ -68,23 +74,37 @@ Torn.sf %>%
 
 Torn.sf %>% 
   st_drop_geometry() %>% 
+  filter(mag >= 1) %>%
   group_by(Epoch, Plains, Southeast) %>%
   summarize(countT = n()) %>%
   group_by(Epoch) %>%
   mutate(percentByRegion = prop.table(countT) * 100)
+
+Torn.sf %>% 
+  st_drop_geometry() %>% 
+  filter(mag >= 1) %>%
+  group_by(Epoch, Plains, Southeast) %>%
+  summarize(medianLength = median(Length),
+            medianWidth = median(Width),
+            avgLength = mean(Length),
+            avgWidth = mean(Width)) 
 ```
 
-557/2650 = 21% more tornadoes in the Southeast 1995-2006 vs 2007-2018
+In the period 1995-2006 the Southeast accounted for 25.7% of all tornadoes and the Plains 30.8% of all tornadoes. In the more recent period 2007-2018 the Southeast accounted for 31.8% of all tornadoes and the Plains 29.1%. Tornadoes in the Southeast tend to have longer tracks, with an average track length of 11.8 km over the period 2007-2018 compared with tornadoes in the Plains, with an average track length of 10.0 km over the same period. Thus a changes in path characteristics described in this paper are confounded by the well-known geographic shift in tornado activity.
+
+557/2650 = 21% more tornadoes in the Southeast 2007-2018 compared with 1995-2006
 723/6267 = 12% fewer tornadoes in the Plains 1995-2006 vs 2007-2018
+
+635/1367 = 46% more EF1+ tornadoes in the Southeast 2007-2018 compared with 1995-2006
+194/1636 = 12% more EF1+ tornadoes in the Plains 2007-2018 compared with 1995-2006
 
 Figure 2
 ```{r}
 # Percent of year at 50th EF1+ tornado
-df2 <- Torn2.sf %>%
+df2 <- Torn.sf %>%
   st_drop_geometry() %>%
-  filter(st %in% c("AR", "MS", "AL", "LA", "GA", "TN")) %>%
-#  filter(st %in% c("NE", "KS", "OK", "TX", "IA", "SD", "CO", "ND")) %>%
   filter(mag >= 1) %>%
+  filter(Southeast) %>%
   mutate(DoY = yday(as.Date(date))) %>%
   group_by(yr) %>%
   summarize(DoY25 = nth(DoY, 25),
@@ -100,7 +120,7 @@ df2 %>%
             avg50 = mean(PerYear50),
             avg75 = mean(PerYear75))
 
-wilcox.test(PerYear100 ~ Epoch, data = df2)
+wilcox.test(PerYear50 ~ Epoch, data = df2)
 
 df2 %>% 
   group_by(Epoch) %>%
@@ -125,9 +145,10 @@ ggplot(data = df2,
   
 
 # Median day of year 
-Torn2.sf %>%
+Torn.sf %>%
   st_drop_geometry() %>%
   filter(mag >= 1) %>%
+  filter(Southeast) %>%
   mutate(DoY = yday(as.Date(date))) %>%
   group_by(yr) %>%
   summarize(medianDoY = median(DoY)) %>%
@@ -138,37 +159,116 @@ Torn2.sf %>%
 
 Figure 3
 ```{r}
-df3 <- Torn2.sf %>%
+df3 <- Torn.sf %>%
   st_drop_geometry() %>%
-  filter(st %in% c("AR", "MS", "AL", "LA", "GA", "TN")) %>%
-#  filter(st %in% c("NE", "KS", "OK", "TX", "IA", "SD", "CO", "ND")) %>%
-  group_by(yr) %>%
+  group_by(Plains, Southeast, yr) %>%
   summarize(ratio21 = sum(mag >= 2)/sum(mag >= 1),
             ratio32 = sum(mag >= 3)/sum(mag >= 2),
             ratio43 = sum(mag >= 4)/sum(mag >= 3),
             Avg = mean(c(ratio21, ratio32, ratio43))) %>%
-   mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018")))
+   mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018")),
+          Location = factor(case_when(Plains ~ "Plains",
+                               Southeast ~ "Southeast",
+                               !Plains & !Southeast ~ "Outside Plains & Southeast"),
+                            levels = c("Plains", "Southeast", "Outside Plains & Southeast")))
 
 df3 %>%
+  group_by(Epoch, Plains, Southeast) %>%
   summarize(AvgRatio21 = mean(ratio21),
             AvgRatio32 = mean(ratio32),
             AvgRatio43 = mean(ratio43),
             AvgAvg = mean(Avg))
 
-   ggplot(data = df3,
-          mapping = aes(x = yr, y = Avg, color = Epoch)) +
-    scale_color_manual(values = c("blue", "red")) +
-    scale_y_continuous(limits = c(0, NA)) +
-    geom_point(show.legend = FALSE) 
+ggplot(data = df3,
+       mapping = aes(x = yr, y = Avg, color = Epoch)) +
+  scale_color_manual(values = c("blue", "red")) +
+  scale_y_continuous(limits = c(0, NA)) +
+  xlab("") + ylab("") +
+  geom_point(size = 2, show.legend = FALSE) +
+  geom_smooth(show.legend = FALSE) +
+  geom_point(data = df3[c(25, 50, 75),], aes(x = yr, y = Avg), color = "black", size = 2) +
+  facet_wrap(~ Location, nrow = 3) +
+  ggtitle(label = "No significant difference in the average count ratios before and after 2007",
+            subtitle = "Ratio of tornado counts rated (E)Fn or worse to counts rated (E)Fn+1 or worse averaged for n = 1, 2, & 3.\nBefore (blue) and after the EF rating change in 2007") +
+  theme_minimal()
+
+df3 <-Torn.sf %>%
+  st_drop_geometry() %>%
+  group_by(yr) %>%
+  summarize(ratio21 = sum(mag >= 2)/sum(mag >= 1),
+            ratio32 = sum(mag >= 3)/sum(mag >= 2),
+            ratio43 = sum(mag >= 4)/sum(mag >= 3),
+            Avg = mean(c(ratio21, ratio32, ratio43))) %>%
+   mutate(Epoch = factor(yr >= 2007, labels = c("1995-2006", "2007-2018"))) 
+
+df3 %>%
+  group_by(Epoch) %>%
+  summarize(AvgRatio21 = mean(ratio21),
+            AvgRatio32 = mean(ratio32),
+            AvgRatio43 = mean(ratio43),
+            AvgAvg = mean(Avg))
+
+ggplot(data = df3,
+       mapping = aes(x = yr, y = Avg, color = Epoch)) +
+  scale_color_manual(values = c("blue", "red")) +
+  scale_y_continuous(limits = c(0, NA)) +
+  xlab("") + ylab("") +
+  geom_point(size = 2, show.legend = FALSE) +
+#  geom_smooth(show.legend = FALSE) +
+  geom_segment(mapping = aes(x = 1995, xend = 2006, y = .243, yend = .243), color = "blue") +
+  geom_segment(mapping = aes(x = 2007, xend = 2019, y = .219, yend = .219), color = "red") +
+  geom_point(data = df3[25,], aes(x = yr, y = Avg), color = "black", size = 2) +
+  ggtitle(label = "No significant difference in the average count ratios before and after 2007",
+            subtitle = "Ratio of tornado counts rated (E)Fn or worse to counts rated (E)Fn+1 or worse averaged for n = 1, 2, & 3.\nBefore (blue) and after the EF rating change in 2007. The value for 2019 (black) is not included in Edwards et al.") +
+  theme_minimal()
 ```
 
-Group years in 3-year intervals
+Figure 5
 ```{r}
-df4 <- Torn2.sf %>%
-  mutate(ThreeYearBins = cut(yr, seq(1994, 2019, by = 3),
-                             labels = c("1995-1997", "1998-2000", "2001-2003", "2004-2006",
-                                        "2007-2009", "2010-2012", "2013-2015", "2016-2018")))
+Torn.sf %>%
+  st_drop_geometry() %>%
+  group_by(ThreeYearBins, Location, Damage) %>%
+  summarize(AvgLength = mean(Length) / 1000,
+            AvgWidth = mean(Width)) %>%
+ggplot(aes(x = ThreeYearBins, y = AvgWidth)) +
+  geom_point() +
+  scale_y_continuous(limits = c(0, NA)) +
+#  geom_smooth(method = lm) +
+  facet_wrap(~ Location + Damage, ncol = 2) +
+  theme_minimal()
 ```
+
+Figure 7: Average path width by F & EF
+```{r}
+Torn.sf %>%
+  st_drop_geometry() %>%
+  group_by(mag, Epoch) %>%
+  summarize(AvgWidth = mean(Width),
+            AvgLength = mean(Length) / 1000) %>%
+ggplot(aes(x = factor(mag), y = AvgLength)) +
+  geom_col(aes(fill = Epoch), position = "dodge") +
+  scale_fill_manual(values = c("blue", "red")) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal() +
+  xlab("(E)F Rating") + ylab("Average Path length (km)") +
+  ggtitle(label = "Damage paths are longer for tornadoes rated since the EF scale was implemented")
+
+Torn.sf %>%
+  st_drop_geometry() %>%
+  filter(!Location == "Outside Plains & Southeast") %>%
+  group_by(mag, Location) %>%
+  summarize(AvgWidth = mean(Width),
+            AvgLength = mean(Length) / 1000) %>%
+ggplot(aes(x = factor(mag), y = AvgLength)) +
+  geom_col(aes(fill = Location), position = "dodge") +
+  scale_fill_manual(values = c("blue", "red")) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal() +
+  xlab("(E)F Rating") + ylab("Average Path length (km)") +
+  ggtitle(label = "Damage paths are longer for tornadoes occurring in the Southeast")
+```
+
+
 
 Prepare the tornado data.
 ```{r}
