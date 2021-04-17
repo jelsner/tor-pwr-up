@@ -16,6 +16,7 @@ Load packages.
 library(tidyverse)
 library(lubridate)
 library(ggplot2)
+library(ggside)
 library(rgeos)
 library(sf)
 library(xtable)
@@ -208,7 +209,7 @@ df3 %>%
             AvgRatio43 = mean(ratio43),
             AvgAvg = mean(Avg))
 
-ggplot(data = df3,
+p <- ggplot(data = df3,
        mapping = aes(x = yr, y = Avg, color = Epoch)) +
   scale_color_manual(values = c("blue", "red")) +
   scale_y_continuous(limits = c(0, NA)) +
@@ -220,7 +221,9 @@ ggplot(data = df3,
   geom_point(data = df3[25,], aes(x = yr, y = Avg), color = "black", size = 2) +
   ggtitle(label = "No significant difference in the average count ratios before and after 2007",
             subtitle = "Ratio of tornado counts rated (E)Fn or worse to counts rated (E)Fn+1 or worse averaged for n = 1, 2, & 3.\nBefore (blue) and after the EF rating change in 2007. The value for 2019 (black) is not included in Edwards et al.") +
-  theme_minimal()
+  theme_bw()
+
+p + geom_ysidedensity(aes(x = stat(density)), show.legend = FALSE)
 ```
 
 Figure 5
