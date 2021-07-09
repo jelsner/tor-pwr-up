@@ -99,6 +99,23 @@ In the period 1995-2006 the Southeast accounted for 25.7% of all tornadoes and t
 635/1367 = 46% more EF1+ tornadoes in the Southeast 2007-2018 compared with 1995-2006
 194/1636 = 12% more EF1+ tornadoes in the Plains 2007-2018 compared with 1995-2006
 
+
+```{r}
+X <- Torn.sf %>% 
+  st_drop_geometry() %>% 
+  filter(mag >= 1) %>%
+  filter(!st == "RI") %>%
+  group_by(st, Epoch) %>%
+  summarize(avgLength = mean(Length),
+            avgWidth = mean(Width)) %>%
+  group_by(st) %>%
+  mutate(GT = avgWidth[Epoch ==  "1995-2006"] > avgWidth[Epoch ==  "2007-2018"])
+```
+
+States where the average path length for EF1+ tornadoes was longer before the implementation of the EF rating scale in 2007: AR, DE, IA, IL, IN, KY, LA, MD, MO, MS, NY, OH, PA, SD, UT, VT, WV
+
+States where the average path width for EF1+ tornadoes was wider before the implementation of the EF rating scale in 2007: DE, ID, IL, IN, KY, MI, PA, SD, TN, UT
+
 Figure 2
 ```{r}
 # Percent of year at 50th EF1+ tornado
