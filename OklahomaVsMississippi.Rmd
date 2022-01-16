@@ -49,8 +49,8 @@ For missing EF ratings use the modification rules (if/else) defined here: https:
 Torn.sf <- Torn.sf |>
   filter(yr >= 1994 & yr <= 2019) |>
 #  filter(st %in% c("OK", "MS")) |>
-  filter(st == "OK", mo %in% c(5, 6, 7, 8)) |>
-#  filter(st == "MS", mo %in% c(1, 2, 11, 12)) |>
+#  filter(st == "OK", mo %in% c(5, 6, 7, 8)) |>
+  filter(st == "MS", mo %in% c(1, 2, 11, 12)) |>
   mutate(mag = ifelse(mag == -9 & len <= 5, 0, mag),
          mag = ifelse(mag == -9 & len > 5, 1, mag)) |>
   mutate(DateTime = as.POSIXct(paste(yr, mo, dy, time), 
@@ -174,9 +174,11 @@ No changes in the number of EF3+ or EF4+ tornadoes in OK and MS.
 
 Annual trend
 ```{r}
-model0 <- lm(log(maxED) ~ yr, data = dfMS[dfMS$yr >= 2007,])
-model1 <- lm(log(maxED) ~ yr, weights = nT, data = dfMS[dfMS$yr >= 2007,])
-summary(model0); summary(model1)
+summary(lm(log(maxED) ~ yr, data = dfMS[dfMS$yr >= 2007,]))
+
+summary(lm(log(maxED) ~ yr, weights = nT, data = dfMS[dfMS$yr >= 2007,]))
+summary(lm(log(maxED) ~ yr, weights = nT, data = dfOK[dfOK$yr >= 2007,]))
+
 
 model2 <- lm(avgED ~ yr, weights = nT, data = dfMS[dfMS$yr >= 2007,])
 model3 <- lm(avgED ~ yr, weights = nT, data = dfOK[dfOK$yr >= 2007,])
@@ -184,7 +186,20 @@ model3 <- lm(avgED ~ yr, weights = nT, data = dfOK[dfOK$yr >= 2007,])
 lmtest::bptest(model3) # H0: residuals are distributed w/ equal variance
 ```
 
-Upward trends in tornado intensities 
+Quantile regression
+```{r}
+library(quantreg)
+
+df <- TornMS.sf |>
+  filter(yr >= 2007, mag >= 1)
+
+summary(rq(log(ED) ~ yr, tau = .5, 
+        data = df))
+```
+
+An analysis based on the SPC data archive of tornado reports finds an upward trend of about 3% per year in the intensity (based on the definition in Fricker et al. (2017) as used in this study) of the annual strongest tornado occurring during the COOL season (November-February) in Mississippi and a downward trend of similar magnitude in the intensity of the annual strongest tornado occurring during the WARM season (May-July) in Oklahoma using reports since 2007 (start of the EF damage rating).
+
+Upward trends in tornado intensity for MS during the cold season and a slight downward trend in OK during the warm season
 
 Start with a log-linear mixed model using the `lmer()` function from the **lme4** package. The response variable is the natural logarithm of energy dissipation. Random intercept on the month and hour term.
 ```{r}
