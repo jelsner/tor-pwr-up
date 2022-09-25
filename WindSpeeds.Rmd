@@ -1,0 +1,36 @@
+# Tornado wind speeds
+
+Get data
+
+```{r}
+if(!"1950-2020-torn-initpoint" %in% list.files()) {
+download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/1950-2020-torn-initpoint.zip",
+              destfile = "1950-2020-torn-initpoint.zip")
+unzip("1950-2020-torn-initpoint.zip")
+}
+Torn.sf <- sf::st_read(dsn = "1950-2020-torn-initpoint", 
+                       layer = "1950-2020-torn-initpoint") |>
+  dplyr::filter(yr >= 2003)
+```
+
+Convert units
+
+```{r}
+Torn.df <-
+  Torn.sf |>
+  sf::st_drop_geometry() |>
+  dplyr::mutate(Length = len * 1609.3,
+                Width = wid * .9144,
+                FAT = fat > 0) |>
+  dplyr::select(Length, Width, FAT)
+```
+
+Estimate wind speeds using https://myweb.fsu.edu/jelsner/PDF/Research/ElsnerJaggerElsner2014.pdf
+
+```{r}
+mu <- exp(2.052 + 2.265e-5 * Torn.df$Length + 
+            1.544e-3 * Torn.df$Width + 
+            .3586 * Torn.df$FAT) 
+k <- exp(.6324 - 3.117e-4 * Torn.df$Length - 4.004e-6 * Torn.df$Width)
+```
+
