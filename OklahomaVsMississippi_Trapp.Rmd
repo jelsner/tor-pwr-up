@@ -1,7 +1,7 @@
 ---
 title: "Increasingly Powerful Tornadoes: Oklahoma vs Mississippi"
 author: "James B. Elsner"
-date: January 2022
+date: September 2022
 output: 
   html_document:
     keep_md: true
@@ -9,7 +9,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+R version 4.2.1 (2022-06-23) -- "Funny-Looking Kid"
 
 Load packages.
 ```{r}
@@ -32,25 +32,41 @@ unzip("1950-2019-torn-aspath.zip")
 Torn.sf <- st_read(dsn = "1950-2019-torn-aspath", 
                    layer = "1950-2019-torn-aspath")
 
-if(!"1950-2019-torn-inipoint" %in% list.files()) {
-download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/1950-2019-torn-initpoint.zip",
-              destfile = "1950-2019-torn-initpoint.zip")
-unzip("1950-2019-torn-initpoint.zip")
+if(!"1950-2020-torn-inipoint" %in% list.files()) {
+download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/1950-2020-torn-initpoint.zip",
+              destfile = "1950-2020-torn-initpoint.zip")
+unzip("1950-2020-torn-initpoint.zip")
 }
 
-Torn.sf <- st_read(dsn = "1950-2019-torn-initpoint", 
-                   layer = "1950-2019-torn-initpoint")
+Torn.sf <- st_read(dsn = "1950-2020-torn-initpoint", 
+                   layer = "1950-2020-torn-initpoint")
 ```
 
 Prepare the tornado data. Keep only tornadoes since 1994 for Mississippi and/or Oklahoma. The year marks the beginning of comprehensive WSR-88D radar. The two states approximate the areas used in Trapp's pseudo-climate change experiment.
 
 For missing EF ratings use the modification rules (if/else) defined here: https://www.spc.noaa.gov/wcm/OneTor_F-scale-modifications.pdf
 ```{r}
-Torn.sf <- Torn.sf |>
-  filter(yr >= 1994 & yr <= 2019) |>
-#  filter(st %in% c("OK", "MS")) |>
-  filter(st == "OK", mo %in% c(5, 6, 7, 8)) |> #Use this for OK warm-season tornadoes
-#  filter(st == "MS", mo %in% c(1, 2, 11, 12)) |> #Use this for MS cool-season tornadoes
+Torn_OKwarm.sf <- Torn.sf |>
+  filter(yr >= 1994 & yr <= 2020) |>
+  filter(st == "OK", mo %in% c(5, 6, 7, 8)) |> 
+  mutate(mag = ifelse(mag == -9 & len <= 5, 0, mag),
+         mag = ifelse(mag == -9 & len > 5, 1, mag)) |>
+  mutate(DateTime = as.POSIXct(paste(yr, mo, dy, time), 
+                               format = "%Y%m%d%H:%M:%S"),
+         Hour = hour(DateTime),
+         Year = year(DateTime),
+         Length = len * 1609.34,
+         Length = ifelse(Length == 0, min(Length[Length > 0]), Length), #takes care of zero length
+         Width = wid * .9144,
+         Width = ifelse(Width == 0, min(Width[Width > 0]), Width), #takes care of zero width
+         Width = ifelse(Year >= 1995, Width * pi/4, Width), #takes care of change: avg to max
+         cas = inj + fat,
+         AreaPath = Length * Width,
+         Ma = factor(month.abb[mo], levels = month.abb[1:12]))
+
+Torn_MScool.sf <- Torn.sf |>
+  filter(yr >= 1994 & yr <= 2020) |>
+  filter(st == "MS", mo %in% c(1, 2, 11, 12)) |>
   mutate(mag = ifelse(mag == -9 & len <= 5, 0, mag),
          mag = ifelse(mag == -9 & len > 5, 1, mag)) |>
   mutate(DateTime = as.POSIXct(paste(yr, mo, dy, time), 
@@ -78,17 +94,23 @@ perc <- c(1, 0, 0, 0, 0, 0,
 percM <- matrix(perc, ncol = 6, byrow = TRUE)
 threshW <- c(29.06, 38.45, 49.62, 60.8, 74.21, 89.41)
 midptW <- c(diff(threshW)/2 + threshW[-length(threshW)], threshW[length(threshW)] + 7.5)
-ef <- Torn.sf$mag + 1
+
+ef <- Torn_OKwarm.sf$mag + 1
 EW3 <- numeric()
 for(i in 1:length(ef)) EW3[i] <- midptW^3 %*% percM[ef[i], ]
-Torn.sf$e3 <- EW3
-Torn.sf$ED <- Torn.sf$e3 * Torn.sf$AreaPath
+Torn_OKwarm.sf$e3 <- EW3
+Torn_OKwarm.sf$ED <- Torn_OKwarm.sf$e3 * Torn_OKwarm.sf$AreaPath
+
+ef <- Torn_MScool.sf$mag + 1
+EW3 <- numeric()
+for(i in 1:length(ef)) EW3[i] <- midptW^3 %*% percM[ef[i], ]
+Torn_MScool.sf$e3 <- EW3
+Torn_MScool.sf$ED <- Torn_MScool.sf$e3 * Torn_MScool.sf$AreaPath
 ```
 
 ```{r}
-Torn.sf |>
+Torn_OKwarm.sf |>
   st_drop_geometry() |>
-  group_by(st) |>
   summarize(arithmeticM = mean(ED) / 10^9,
             geometricM = exp(mean(log(ED))) / 10^9,
             harmonicMean = 1/mean(1/ED) / 10^9,
@@ -98,11 +120,35 @@ Torn.sf |>
             q75 = quantile(ED, probs = .75) / 10^9)
 ```
 
-Statistics of energy dissipation by damage rating and state.
 ```{r}
-Torn.sf |>
+Torn_MScool.sf |>
   st_drop_geometry() |>
-  group_by(st, mag) |>
+  summarize(arithmeticM = mean(ED) / 10^9,
+            geometricM = exp(mean(log(ED))) / 10^9,
+            harmonicMean = 1/mean(1/ED) / 10^9,
+            scalingFactor = arithmeticM / geometricM,
+            q25 = quantile(ED, probs = .25) / 10^9,
+            q50 = quantile(ED, probs = .5) / 10^9,
+            q75 = quantile(ED, probs = .75) / 10^9)
+```
+
+Statistics of energy dissipation by damage rating.
+```{r}
+Torn_OKwarm.sf |>
+  st_drop_geometry() |>
+  group_by(mag) |>
+  summarize(nT = n(),
+            arithmeticM = mean(ED) / 10^9,
+            geometricM = exp(mean(log(ED))) / 10^9,
+            q25 = quantile(ED, probs = .25) / 10^9,
+            q50 = quantile(ED, probs = .5) / 10^9,
+            q75 = quantile(ED, probs = .75) / 10^9)
+```
+
+```{r}
+Torn_MScool.sf |>
+  st_drop_geometry() |>
+  group_by(mag) |>
   summarize(nT = n(),
             arithmeticM = mean(ED) / 10^9,
             geometricM = exp(mean(log(ED))) / 10^9,
@@ -113,9 +159,9 @@ Torn.sf |>
 
 Statistics of energy dissipation by hour of day.
 ```{r}
-Torn.sf |>
+Torn_OKwarm.sf |>
   st_drop_geometry() |>
-  group_by(st, Hour) |>
+  group_by(Hour) |>
   summarize(nT = n(),
             arithmeticMean = mean(ED) / 10^9,
             geometricMean = exp(mean(log(ED))) / 10^9,
@@ -123,10 +169,53 @@ Torn.sf |>
             q75 = quantile(ED, probs = .75) / 10^9) 
 ```
 
+```{r}
+Torn_MScool.sf |>
+  st_drop_geometry() |>
+  group_by(Hour) |>
+  summarize(nT = n(),
+            arithmeticMean = mean(ED) / 10^9,
+            geometricMean = exp(mean(log(ED))) / 10^9,
+            q90 = quantile(ED, probs = .9) / 10^9,
+            q75 = quantile(ED, probs = .75) / 10^9) 
+```
+
+```{r}
+Torn_MScool.sf |>
+  filter(yr >= 2007) |>
+  group_by(yr) |>
+  summarize(nT = n()) |>
+  pull(nT) |>
+  summary()
+
+Torn_OKwarm.sf |>
+  filter(yr >= 2007) |>
+  group_by(yr) |>
+  summarize(nT = n()) |>
+  pull(nT) |>
+  summary()
+```
+
 Annual quantiles
 ```{r}
-dfOK <- #repeat for dfMS where Torn.sf is only cool-season MS tornadoes
-  Torn.sf |>  
+dfOK <-
+  Torn_OKwarm.sf |>  
+  st_drop_geometry() |>
+  group_by(yr) |>
+  summarize(nT = n(),
+            nST = sum(mag >= 4),
+            nC = sum(inj + fat),
+            avgED = mean(ED),
+            q25ED = quantile(ED, prob = .25),
+            q50ED = quantile(ED, prob = .5),
+            q75ED = quantile(ED, prob = .75),
+            q90ED = quantile(ED, prob = .9),
+            q95ED = quantile(ED, prob = .95),
+            maxED = max(ED),
+            totalED = sum(ED))
+
+dfMS <-
+  Torn_MScool.sf |>  
   st_drop_geometry() |>
   group_by(yr) |>
   summarize(nT = n(),
@@ -161,7 +250,7 @@ ggplot(mapping = aes(x = yr, y = maxED / 10^9, color = State)) +
   scale_y_log10() +
   geom_smooth(method = lm, se = FALSE) +
   scale_x_continuous(breaks = seq(2007, 2019, by = 3)) +
-  labs(x = "Year", y = "Maximum energy dissiptation (GW)") +
+  labs(x = "Year", y = "Highest tornado intensity (GW)") +
   theme_minimal() +
   theme(legend.title=element_blank())
 ```
@@ -210,6 +299,6 @@ summary(rq(log(ED) ~ yr, tau = .5,
         data = df))
 ```
 
-An analysis based on the SPC data archive of tornado reports finds an upward trend of about 3% per year in the intensity (based on the definition in Fricker et al. (2017) as used in this study) of the annual strongest tornado occurring during the COOL season (November-February) in Mississippi and a downward trend of similar magnitude in the intensity of the annual strongest tornado occurring during the WARM season (May-July) in Oklahoma using reports since 2007 (start of the EF damage rating).
+An analysis based on the SPC data archive of tornado reports finds an upward trend of about 3% per year in the intensity (based on the definition in Fricker et al. (2017) as used in this study) of the annual strongest tornado occurring during the COOL season (November-February) in Mississippi and a downward trend of similar magnitude in the intensity of the annual strongest tornado occurring during the WARM season (May-July) in Oklahoma using reports over the period 2007-2020 (with 2007 being the year the EF damage rating was first implemented).
 
 Upward trends in tornado intensity for MS during the cold season and a slight downward trend in OK during the warm season.
