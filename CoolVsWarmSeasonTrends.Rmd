@@ -1,5 +1,5 @@
 ---
-title: "Increasingly Powerful Tornadoes: Oklahoma vs Mississippi"
+title: "Cool vs warm season trends"
 author: "James B. Elsner"
 date: September 2022
 output: 
@@ -16,12 +16,10 @@ Load packages.
 library(tidyverse)
 library(lubridate)
 library(ggplot2)
-library(ggside)
-library(rgeos)
 library(sf)
-library(xtable)
 ```
 
+Get the data from SPC and import the shapefile.
 ```{r}
 if(!"1950-2019-torn-aspath" %in% list.files()) {
 download.file(url = "http://www.spc.noaa.gov/gis/svrgis/zipped/1950-2019-torn-aspath.zip",
@@ -42,7 +40,7 @@ Torn.sf <- st_read(dsn = "1950-2020-torn-initpoint",
                    layer = "1950-2020-torn-initpoint")
 ```
 
-Prepare the tornado data. Keep only tornadoes since 1994 for Mississippi and/or Oklahoma. The year marks the beginning of comprehensive WSR-88D radar. The two states approximate the areas used in Trapp's pseudo-climate change experiment.
+Prepare the data. Keep only tornadoes since 1994 for Mississippi and/or Oklahoma. The year marks the beginning of comprehensive WSR-88D radar. The two states approximate the areas used in the pseudo-global warming (PGW) experiment.
 
 For missing EF ratings use the modification rules (if/else) defined here: https://www.spc.noaa.gov/wcm/OneTor_F-scale-modifications.pdf
 ```{r}
@@ -83,7 +81,7 @@ Torn_MScool.sf <- Torn.sf |>
          Ma = factor(month.abb[mo], levels = month.abb[1:12]))
 ```
 
-Compute per-tornado energy dissipation. Energy dissipation is computed as in Fricker et al. (2017).
+Compute per-tornado energy dissipation. Energy dissipation is computed as in Fricker et al. (2017). <https://myweb.fsu.edu/jelsner/PDF/Research/FrickerElsnerJagger2017.pdf>
 ```{r}
 perc <- c(1, 0, 0, 0, 0, 0, 
          .772, .228, 0, 0, 0, 0,
@@ -267,9 +265,22 @@ ggplot(data = dfOK,
   scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), 
                 labels = c(.1, 1, 10, 100, 1000), 
                 limits = c(.01, 2500)) +
-  scale_x_continuous(breaks = seq(1995, 2015, 5)) +
+  scale_x_continuous(breaks = seq(1995, 2020, 5)) +
   xlab("Year") + ylab("Power [GW]") +
-#  facet_wrap(~ st) +
+  theme_minimal() 
+
+ggplot(data = dfMS, 
+       mapping = aes(x = yr, y = q50ED/10^9)) +
+  geom_errorbar(aes(ymin = q25ED/10^9, ymax = q75ED/10^9), 
+                color = "grey", width = .2) +
+  geom_point() +
+  geom_point(aes(x = yr, y = q90ED/10^9), data = dfMS, color = "red") +
+#  scale_y_log10() +
+  scale_y_log10(breaks = c(.1, 1, 10, 100, 1000), 
+                labels = c(.1, 1, 10, 100, 1000), 
+                limits = c(.01, 2500)) +
+  scale_x_continuous(breaks = seq(1995, 2020, 5)) +
+  xlab("Year") + ylab("Power [GW]") +
   theme_minimal() 
 ```
 
@@ -283,23 +294,27 @@ summary(lm(log(maxED) ~ yr, weights = nT, data = dfMS[dfMS$yr >= 2007,]))
 summary(lm(log(maxED) ~ yr, weights = nT, data = dfOK[dfOK$yr >= 2007,]))
 
 
-model2 <- lm(avgED ~ yr, weights = nT, data = dfMS[dfMS$yr >= 2007,])
-model3 <- lm(avgED ~ yr, weights = nT, data = dfOK[dfOK$yr >= 2007,])
+modelMS <- lm(log(maxED) ~ yr, weights = nT, data = dfMS[dfMS$yr >= 2007,])
+modelOK <- lm(log(maxED) ~ yr, weights = nT, data = dfOK[dfOK$yr >= 2007,])
 
-lmtest::bptest(model3) # H0: residuals are distributed w/ equal variance
+lmtest::bptest(modelOK) # H0: residuals are distributed w/ equal variance
 ```
 
 Quantile regression
 ```{r}
 library(quantreg)
 
-df <- TornMS.sf |>
+df <- Torn_MScool.sf |>
   filter(yr >= 2007, mag >= 1)
 
 summary(rq(log(ED) ~ yr, tau = .5, 
-        data = df))
+           data = df))
+
+df <- Torn_OKwarm.sf |>
+  filter(yr >= 2007, mag >= 1)
+
+summary(rq(log(ED) ~ yr, tau = .5, 
+           data = df))
 ```
 
-An analysis based on the SPC data archive of tornado reports finds an upward trend of about 3% per year in the intensity (based on the definition in Fricker et al. (2017) as used in this study) of the annual strongest tornado occurring during the COOL season (November-February) in Mississippi and a downward trend of similar magnitude in the intensity of the annual strongest tornado occurring during the WARM season (May-July) in Oklahoma using reports over the period 2007-2020 (with 2007 being the year the EF damage rating was first implemented).
-
-Upward trends in tornado intensity for MS during the cold season and a slight downward trend in OK during the warm season.
+Upward trends in tornado intensity for MS during the cold season and a downward trend in OK during the warm season.
