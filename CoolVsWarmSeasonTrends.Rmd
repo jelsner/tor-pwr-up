@@ -249,7 +249,7 @@ ggplot(mapping = aes(x = yr, y = maxED / 10^9, color = State)) +
   scale_y_log10() +
   geom_smooth(method = lm, se = FALSE) +
   scale_x_continuous(breaks = seq(2007, 2019, by = 3)) +
-  labs(x = "Year", y = "Intensity (GW)") +
+  labs(x = "Year", y = "Intensity (GW) of the strongest tornado") +
   theme_minimal() +
   theme(legend.title=element_blank())
 ```
